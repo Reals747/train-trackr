@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { comparePassword, setAuthCookie, signToken } from "@/lib/auth";
+import { jsonAuthRouteError } from "@/lib/auth-route-error-response";
 import { prisma } from "@/lib/prisma";
 
 const schema = z.object({
@@ -49,10 +50,7 @@ export async function POST(request: Request) {
         storeName: user.store.name,
       },
     });
-  } catch {
-    return NextResponse.json(
-      { error: "Database unavailable. Start PostgreSQL and try again." },
-      { status: 503 },
-    );
+  } catch (error) {
+    return jsonAuthRouteError(error);
   }
 }

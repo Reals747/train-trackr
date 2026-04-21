@@ -2,6 +2,7 @@ import { Role } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { hashPassword, setAuthCookie, signToken } from "@/lib/auth";
+import { jsonAuthRouteError } from "@/lib/auth-route-error-response";
 import { prisma } from "@/lib/prisma";
 
 const usernameSchema = z
@@ -98,10 +99,7 @@ export async function POST(request: Request) {
         storeName: settings.store.name,
       },
     });
-  } catch {
-    return NextResponse.json(
-      { error: "Database unavailable. Start PostgreSQL and try again." },
-      { status: 503 },
-    );
+  } catch (error) {
+    return jsonAuthRouteError(error);
   }
 }
