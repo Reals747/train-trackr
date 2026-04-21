@@ -6,10 +6,15 @@ import {
   SetStateAction,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
+  type ClipboardEvent as ReactClipboardEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type ReactNode,
 } from "react";
+import { formatDateTime } from "@/lib/format-datetime";
 import { can, roleLabel, type Permission, type RoleName } from "@/lib/permissions";
 
 type Role = RoleName;
@@ -26,25 +31,27 @@ type Trainee = {
   startDate: string;
   positions: { positionId: string; position: { id: string; name: string } }[];
 };
+type DashboardPositionDetail = {
+  positionId: string;
+  name: string;
+  hidden: boolean;
+  totalItems: number;
+  completedItems: number;
+  /** Derived from checklist items only: 100% complete, 0% not started, else in progress. */
+  status: "complete" | "partial" | "none";
+  items: { id: string; text: string; completed: boolean }[];
+};
+
 type DashboardRow = {
   id: string;
   name: string;
   percentage: number;
-  completedItems: number;
-  remainingItems: number;
-  totalItems: number;
-  positions: string[];
+  positionsFullyComplete: number;
+  storePositionCount: number;
+  remainingPositions: number;
+  positionDetails: DashboardPositionDetail[];
 };
 type ActivityLog = { id: string; message: string; actor: string; createdAt: string };
-type ProgressItem = {
-  id: string;
-  text: string;
-  description: string | null;
-  completed: boolean;
-  trainerName: string | null;
-  notes: string | null;
-  completedAt: string | null;
-};
 type AuthMode = "login" | "register-admin" | "register-trainer";
 type SettingsCategory = "account" | "store" | "appearance" | "trainers" | "trainingSetup";
 type AccountDetails = {
@@ -75,6 +82,8 @@ type AppearanceSettings = {
   fontScale: number;
   accent: string;
   compactCards: boolean;
+  /** When true, theme follows OS/browser `prefers-color-scheme`; manual toggle is disabled. */
+  followSystemTheme: boolean;
 };
 type AnnouncementRow = {
   id: string;
@@ -92,6 +101,159 @@ type AnnouncementRow = {
   }[];
 };
 
+const DEFAULT_APPEARANCE: AppearanceSettings = {
+  darkMode: false,
+  fontScale: 1,
+  accent: "#dc2626",
+  compactCards: false,
+  followSystemTheme: true,
+};
+
+function SunIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      className={className ?? "h-5 w-5"}
+      aria-hidden
+    >
+      <path d="M12 2.25a.75.75 0 01.75.75v2.25a.75.75 0 01-1.5 0V3a.75.75 0 01.75-.75zM7.5 12a4.5 4.5 0 119 0 4.5 4.5 0 01-9 0zM18.894 6.166a.75.75 0 00-1.06-1.06l-1.591 1.59a.75.75 0 101.06 1.061l1.591-1.59zM21.75 12a.75.75 0 01-.75.75h-2.25a.75.75 0 010-1.5H21a.75.75 0 01.75.75zM17.834 18.894a.75.75 0 001.06-1.06l-1.59-1.591a.75.75 0 10-1.061 1.06l1.59 1.591zM12 18a.75.75 0 01.75.75V21a.75.75 0 01-1.5 0v-2.25A.75.75 0 0112 18zM7.758 17.303a.75.75 0 00-1.061-1.06l-1.591 1.59a.75.75 0 001.06 1.061l1.591-1.59zM6 12a.75.75 0 01-.75.75H3a.75.75 0 010-1.5h2.25A.75.75 0 016 12zm6.303 7.758a.75.75 0 001.06-1.06l-1.59-1.591a.75.75 0 10-1.061 1.06l1.59 1.591z" />
+    </svg>
+  );
+}
+
+function MoonIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      fill="none"
+      viewBox="0 0 24 24"
+      strokeWidth={1.5}
+      stroke="currentColor"
+      className={className ?? "h-5 w-5"}
+      aria-hidden
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M21.752 15.002A9.718 9.718 0 0118 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 003 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 009.002-5.998z"
+      />
+    </svg>
+  );
+}
+
+/** Outline history / recent activity (Lucide “History” paths, stroke matched to gear icon). */
+function ActivityHistoryIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      fill="none"
+      viewBox="0 0 24 24"
+      strokeWidth={1.5}
+      stroke="currentColor"
+      className={className ?? "h-5 w-5 shrink-0"}
+      aria-hidden
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"
+      />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M3 3v5h5" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M12 7v5l4 2" />
+    </svg>
+  );
+}
+
+/** Outline gear icon (same visual language as Apple SF Symbols “gearshape”; SVG for web compatibility). */
+function SettingsGearIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      fill="none"
+      viewBox="0 0 24 24"
+      strokeWidth={1.5}
+      stroke="currentColor"
+      className={className ?? "h-5 w-5 shrink-0"}
+      aria-hidden
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827c-.293.24-.438.613-.431.992a6.759 6.759 0 010 .255c-.007.378.138.75.43.99l1.005.828c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.57 6.57 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.28c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.02-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.369-.49l-1.297-2.247a1.125 1.125 0 01.26-1.431l1.004-.827c.292-.24.437-.613.43-.992a6.932 6.932 0 010-.255c.007-.378-.138-.75-.43-.99l-1.004-.828a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.087.22-.128.332-.183.582-.495.644-.869l.214-1.281z"
+      />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+    </svg>
+  );
+}
+
+/** Chevron right when collapsed, down when expanded. */
+function ChevronDisclosureIcon({ expanded, className }: { expanded: boolean; className?: string }) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      fill="none"
+      viewBox="0 0 24 24"
+      strokeWidth={1.5}
+      stroke="currentColor"
+      className={className ?? "h-4 w-4 shrink-0 opacity-60"}
+      aria-hidden
+    >
+      {expanded ? (
+        <path strokeLinecap="round" strokeLinejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
+      ) : (
+        <path strokeLinecap="round" strokeLinejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
+      )}
+    </svg>
+  );
+}
+
+/** Rounded checkbox outline; stroke check when completed. */
+function ChecklistCheckboxIcon({ completed, className }: { completed: boolean; className?: string }) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      fill="none"
+      viewBox="0 0 24 24"
+      strokeWidth={1.5}
+      stroke="currentColor"
+      className={className ?? "h-[20px] w-[20px] shrink-0"}
+      aria-hidden
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M5.25 7.5A2.25 2.25 0 0 1 7.5 5.25h9a2.25 2.25 0 0 1 2.25 2.25v9a2.25 2.25 0 0 1-2.25 2.25h-9a2.25 2.25 0 0 1-2.25-2.25v-9Z"
+      />
+      {completed && (
+        <path strokeLinecap="round" strokeLinejoin="round" d="m9 12.75 2.25 2.25L15 9.75" />
+      )}
+    </svg>
+  );
+}
+
+/** Horizontal ellipsis for overflow menus. */
+function EllipsisHorizontalIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      fill="none"
+      viewBox="0 0 24 24"
+      strokeWidth={1.5}
+      stroke="currentColor"
+      className={className ?? "h-5 w-5 shrink-0"}
+      aria-hidden
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M6.75 12a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0ZM12 12a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0ZM18 12a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0Z"
+      />
+    </svg>
+  );
+}
+
 async function api<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, {
     ...init,
@@ -104,6 +266,156 @@ async function api<T>(url: string, init?: RequestInit): Promise<T> {
   return response.json() as Promise<T>;
 }
 
+function PositionChecklistStatusTag({ status }: { status: DashboardPositionDetail["status"] }) {
+  if (status === "complete") {
+    return (
+      <span className="inline-flex shrink-0 items-center gap-1 rounded px-2 py-0.5 text-xs font-medium bg-emerald-100 text-emerald-900 dark:bg-emerald-900/40 dark:text-emerald-100 max-sm:ring-1 max-sm:ring-inset max-sm:ring-emerald-300/90 dark:max-sm:ring-emerald-500/50">
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          viewBox="0 0 20 20"
+          fill="currentColor"
+          className="size-[14px] shrink-0"
+          aria-hidden
+        >
+          <path
+            fillRule="evenodd"
+            d="M16.704 4.153a.75.75 0 01.143 1.052l-7.5 10.5a.75.75 0 01-1.127.082l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 6.948-9.817a.75.75 0 011.05-.143z"
+            clipRule="evenodd"
+          />
+        </svg>
+        Completed
+      </span>
+    );
+  }
+  if (status === "partial") {
+    return (
+      <span className="shrink-0 rounded px-2 py-0.5 text-xs font-medium bg-amber-100 text-amber-900 dark:bg-amber-900/40 dark:text-amber-100 max-sm:ring-1 max-sm:ring-inset max-sm:ring-amber-300/90 dark:max-sm:ring-amber-500/50">
+        In progress
+      </span>
+    );
+  }
+  return (
+    <span className="shrink-0 rounded px-2 py-0.5 text-xs font-medium bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-200 max-sm:ring-1 max-sm:ring-inset max-sm:ring-slate-300/80 dark:max-sm:ring-slate-500/50">
+      Not started
+    </span>
+  );
+}
+
+function TraineeDashboardModal({
+  row,
+  onClose,
+}: {
+  row: DashboardRow;
+  onClose: () => void;
+}) {
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="trainee-dashboard-modal-title"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div className="max-h-[min(90vh,720px)] w-full max-w-lg overflow-y-auto rounded-xl border bg-card p-5 shadow-lg">
+        <div className="mb-4 flex items-start justify-between gap-3">
+          <div>
+            <h2 id="trainee-dashboard-modal-title" className="text-lg font-semibold">
+              {row.name}
+            </h2>
+            <p className="mt-1 text-sm opacity-80">
+              {row.percentage}% complete · Done {row.positionsFullyComplete}/{row.storePositionCount}{" "}
+              positions · Remaining {row.remainingPositions}
+            </p>
+          </div>
+          <button
+            type="button"
+            className="shrink-0 rounded-lg border px-3 py-1.5 text-sm font-medium hover:bg-slate-100 dark:hover:bg-slate-700"
+            onClick={onClose}
+          >
+            Close
+          </button>
+        </div>
+
+        <p className="mb-3 text-sm opacity-80">
+          All store positions are listed below. Expand a position to see each checklist item.
+        </p>
+
+        <div className="space-y-2">
+          {row.positionDetails.map((pos) => {
+            const isOpen = expanded[pos.positionId];
+            return (
+              <div
+                key={pos.positionId}
+                className={`rounded-lg border text-sm ${pos.hidden ? "opacity-80" : ""}`}
+              >
+                <button
+                  type="button"
+                  className="flex w-full flex-nowrap items-center gap-x-2 overflow-x-auto overflow-y-hidden px-3 py-2 text-left font-medium [-webkit-overflow-scrolling:touch] sm:flex-wrap sm:overflow-visible"
+                  onClick={() =>
+                    setExpanded((e) => ({ ...e, [pos.positionId]: !e[pos.positionId] }))
+                  }
+                  aria-expanded={isOpen}
+                >
+                  <ChevronDisclosureIcon
+                    expanded={isOpen}
+                    className="size-[16px] shrink-0 opacity-60"
+                  />
+                  <span className="min-w-0 flex-1 truncate">{pos.name}</span>
+                  {pos.hidden && (
+                    <span className="shrink-0 rounded bg-slate-200 px-1.5 py-0.5 text-xs dark:bg-slate-600">
+                      Hidden
+                    </span>
+                  )}
+                  <span className="ml-auto flex shrink-0 flex-nowrap items-center justify-end gap-1.5">
+                    <span className="shrink-0 rounded border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs font-medium tabular-nums text-slate-700 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200">
+                      {pos.completedItems}/{pos.totalItems}
+                    </span>
+                    <PositionChecklistStatusTag status={pos.status} />
+                  </span>
+                </button>
+
+                {isOpen && (
+                  <div className="space-y-2 border-t border-slate-200 px-3 py-3 dark:border-slate-600">
+                    {pos.items.length === 0 ? (
+                      <p className="text-xs opacity-70">No checklist items for this position.</p>
+                    ) : (
+                      <ul className="space-y-2">
+                        {pos.items.map((item) => (
+                          <li key={item.id} className="flex items-start gap-2">
+                            <ChecklistCheckboxIcon
+                              completed={item.completed}
+                              className="mt-0.5 h-[20px] w-[20px] shrink-0"
+                            />
+                            <span className={item.completed ? "text-foreground" : "opacity-90"}>
+                              {item.text}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function Home() {
   const [user, setUser] = useState<AppUser | null>(null);
   const [error, setError] = useState<string>("");
@@ -112,51 +424,45 @@ export default function Home() {
   const [positions, setPositions] = useState<Position[]>([]);
   const [trainees, setTrainees] = useState<Trainee[]>([]);
   const [dashboard, setDashboard] = useState<DashboardRow[]>([]);
+  const [dashboardModalTraineeId, setDashboardModalTraineeId] = useState<string | null>(null);
   const [activity, setActivity] = useState<ActivityLog[]>([]);
   const [selectedTraineeId, setSelectedTraineeId] = useState("");
-  const [selectedPositionId, setSelectedPositionId] = useState("");
-  const [progressItems, setProgressItems] = useState<ProgressItem[]>([]);
   const [search, setSearch] = useState("");
   const [accountDetails, setAccountDetails] = useState<AccountDetails | null>(null);
   const [storeDetails, setStoreDetails] = useState<StoreDetails | null>(null);
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
   const [announcements, setAnnouncements] = useState<AnnouncementRow[]>([]);
-  const [appearance, setAppearance] = useState<AppearanceSettings>({
-    darkMode: false,
-    fontScale: 1,
-    accent: "#2563eb",
-    compactCards: false,
-  });
+  const [appearance, setAppearance] = useState<AppearanceSettings>(DEFAULT_APPEARANCE);
+  const [appearanceReady, setAppearanceReady] = useState(false);
+  const [systemPrefersDark, setSystemPrefersDark] = useState(() =>
+    typeof window !== "undefined"
+      ? window.matchMedia("(prefers-color-scheme: dark)").matches
+      : false,
+  );
 
   const canTrain = can(user?.role, "workflow.edit");
+  const canViewActivity = can(user?.role, "activity.view");
 
-  const applyStoredAppearance = useCallback((targetUser: AppUser) => {
-    const saved = localStorage.getItem(`appearance:${targetUser.id}`);
-    if (!saved) {
-      setAppearance({ darkMode: false, fontScale: 1, accent: "#2563eb", compactCards: false });
-      return;
-    }
-    try {
-      setAppearance(JSON.parse(saved) as AppearanceSettings);
-    } catch {
-      setAppearance({ darkMode: false, fontScale: 1, accent: "#2563eb", compactCards: false });
-    }
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    const sync = () => setSystemPrefersDark(mq.matches);
+    sync();
+    mq.addEventListener("change", sync);
+    return () => mq.removeEventListener("change", sync);
   }, []);
 
   const refreshCore = useCallback(async () => {
-    const [positionsRes, traineesRes, dashboardRes, activityRes, accountRes, annRes] =
-      await Promise.all([
-        api<{ positions: Position[] }>("/api/positions"),
-        api<{ trainees: Trainee[] }>("/api/trainees"),
-        api<{ trainees: DashboardRow[] }>("/api/dashboard"),
-        api<{ logs: ActivityLog[] }>("/api/activity"),
-        api<{ account: AccountDetails }>("/api/settings/account"),
-        api<{ announcements: AnnouncementRow[] }>("/api/announcements"),
-      ]);
+    const [positionsRes, traineesRes, dashboardRes, accountRes, annRes] = await Promise.all([
+      api<{ positions: Position[] }>("/api/positions"),
+      api<{ trainees: Trainee[] }>("/api/trainees"),
+      api<{ trainees: DashboardRow[] }>("/api/dashboard"),
+      api<{ account: AccountDetails }>("/api/settings/account"),
+      api<{ announcements: AnnouncementRow[] }>("/api/announcements"),
+    ]);
     setPositions(positionsRes.positions);
     setTrainees(traineesRes.trainees);
     setDashboard(dashboardRes.trainees);
-    setActivity(activityRes.logs);
     setAccountDetails(accountRes.account);
     setAnnouncements(annRes.announcements);
 
@@ -169,6 +475,16 @@ export default function Home() {
 
     /** DB role from `/api/settings/account` — React `user.role` can lag behind (other tab / promotion). */
     const accessRole = accountRes.account.role;
+    if (can(accessRole, "activity.view")) {
+      try {
+        const activityRes = await api<{ logs: ActivityLog[] }>("/api/activity");
+        setActivity(activityRes.logs);
+      } catch {
+        setActivity([]);
+      }
+    } else {
+      setActivity([]);
+    }
     if (can(accessRole, "members.view")) {
       const [storeOutcome, teamOutcome] = await Promise.allSettled([
         api<{ store: StoreDetails }>("/api/settings/store-details"),
@@ -189,17 +505,6 @@ export default function Home() {
   const refreshCoreRef = useRef(refreshCore);
   refreshCoreRef.current = refreshCore;
 
-  async function refreshProgress(traineeId: string, positionId: string) {
-    if (!traineeId || !positionId) {
-      setProgressItems([]);
-      return;
-    }
-    const res = await api<{ items: ProgressItem[] }>(
-      `/api/progress?traineeId=${traineeId}&positionId=${positionId}`,
-    );
-    setProgressItems(res.items);
-  }
-
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -207,7 +512,6 @@ export default function Home() {
         const me = await api<{ user: AppUser }>("/api/auth/me");
         if (cancelled) return;
         setUser(me.user);
-        applyStoredAppearance(me.user);
         try {
           await refreshCoreRef.current();
         } catch {
@@ -220,38 +524,100 @@ export default function Home() {
     return () => {
       cancelled = true;
     };
-  }, [applyStoredAppearance]);
+  }, []);
+
+  /** Load per-user appearance from the server so it matches on every device for this account. */
+  useEffect(() => {
+    if (!user) {
+      setAppearance(DEFAULT_APPEARANCE);
+      setAppearanceReady(false);
+      return;
+    }
+    let cancelled = false;
+    setAppearanceReady(false);
+    (async () => {
+      try {
+        const res = await api<{ appearance: AppearanceSettings }>("/api/settings/appearance");
+        if (!cancelled) setAppearance(res.appearance);
+      } catch {
+        if (!cancelled) setAppearance(DEFAULT_APPEARANCE);
+      } finally {
+        if (!cancelled) setAppearanceReady(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id]);
 
   useEffect(() => {
-    document.documentElement.classList.toggle("dark", appearance.darkMode);
     document.documentElement.style.setProperty("--accent", appearance.accent);
     document.documentElement.style.setProperty("--font-scale", String(appearance.fontScale));
-    if (user) {
-      localStorage.setItem(`appearance:${user.id}`, JSON.stringify(appearance));
+  }, [appearance.accent, appearance.fontScale]);
+
+  /** Apply `html.dark` from manual choice or from `prefers-color-scheme` when following system. */
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const applyDark = (dark: boolean) => {
+      document.documentElement.classList.toggle("dark", dark);
+    };
+
+    if (appearance.followSystemTheme) {
+      applyDark(systemPrefersDark);
+      return;
     }
-  }, [appearance, user]);
+
+    applyDark(appearance.darkMode);
+  }, [appearance.followSystemTheme, appearance.darkMode, systemPrefersDark]);
+
+  /** Persist appearance for this user (debounced) — stored in DB, not localStorage. */
+  useEffect(() => {
+    if (!user || !appearanceReady) return;
+    const handle = window.setTimeout(() => {
+      api("/api/settings/appearance", {
+        method: "PUT",
+        body: JSON.stringify(appearance),
+      }).catch(() => undefined);
+    }, 450);
+    return () => window.clearTimeout(handle);
+  }, [appearance, user, appearanceReady]);
 
   useEffect(() => {
     const interval = setInterval(() => {
       if (user) {
         refreshCore().catch(() => undefined);
-        refreshProgress(selectedTraineeId, selectedPositionId).catch(() => undefined);
       }
     }, 5000);
     return () => clearInterval(interval);
-  }, [user, selectedTraineeId, selectedPositionId, refreshCore]);
+  }, [user, refreshCore]);
 
   const filteredDashboard = useMemo(
     () => dashboard.filter((row) => row.name.toLowerCase().includes(search.toLowerCase())),
     [dashboard, search],
   );
 
+  const dashboardModalRow = useMemo(
+    () =>
+      dashboardModalTraineeId
+        ? dashboard.find((r) => r.id === dashboardModalTraineeId)
+        : undefined,
+    [dashboard, dashboardModalTraineeId],
+  );
+
+  useEffect(() => {
+    if (tab !== "dashboard") setDashboardModalTraineeId(null);
+  }, [tab]);
+
+  useEffect(() => {
+    if (!canViewActivity && tab === "activity") setTab("dashboard");
+  }, [canViewActivity, tab]);
+
   if (!user) {
     return (
       <AuthScreen
         onLoggedIn={(nextUser) => {
           setUser(nextUser);
-          applyStoredAppearance(nextUser);
         }}
         onError={setError}
         error={error}
@@ -268,28 +634,56 @@ export default function Home() {
             <p className="text-sm opacity-75">{user.storeName} - {user.name} ({user.role})</p>
           </div>
           <div className="flex gap-2">
+            {canViewActivity ? (
+              <button
+                type="button"
+                className={`inline-flex min-h-12 min-w-12 items-center justify-center rounded-lg px-3 py-2 text-sm font-medium ${
+                  tab === "activity"
+                    ? "btn-accent ring-2 ring-offset-2 ring-white/30"
+                    : "border border-slate-200 bg-slate-100 text-slate-900 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100"
+                }`}
+                aria-label="Activity"
+                aria-pressed={tab === "activity"}
+                onClick={() => setTab("activity")}
+              >
+                <ActivityHistoryIcon className="h-5 w-5" />
+              </button>
+            ) : null}
             <button
-              className="rounded-lg border px-3 py-2"
-              aria-label="Open settings"
+              type="button"
+              className={`inline-flex min-h-12 min-w-12 items-center justify-center rounded-lg px-3 py-2 text-sm font-medium ${
+                tab === "settings"
+                  ? "btn-accent ring-2 ring-offset-2 ring-white/30"
+                  : "border border-slate-200 bg-slate-100 text-slate-900 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100"
+              }`}
+              aria-label="Settings"
+              aria-pressed={tab === "settings"}
               onClick={() => {
                 setTab("settings");
                 setSettingsCategory("account");
               }}
             >
-              ⚙
+              <SettingsGearIcon className="h-5 w-5" />
             </button>
           </div>
         </div>
       </header>
 
-      <nav className="grid grid-cols-2 gap-2 rounded-xl bg-card p-2 shadow-sm sm:grid-cols-4">
-        {["dashboard", "workflow", "trainees", "activity"].map((key) => (
+      <nav className="flex flex-row gap-2 rounded-xl bg-card p-2 shadow-sm">
+        {(
+          [
+            ["dashboard", "Dashboard"],
+            ["workflow", "Checklist"],
+            // ["trainees", "Trainees"], — hidden; restore with TraineePanel block below
+          ] as const
+        ).map(([key, label]) => (
           <button
             key={key}
+            type="button"
             onClick={() => setTab(key)}
-            className={`rounded-lg px-3 py-3 text-sm font-medium ${tab === key ? "btn-accent" : "bg-slate-100 text-slate-900 dark:bg-slate-700 dark:text-slate-100"}`}
+            className={`min-w-0 flex-1 basis-0 whitespace-nowrap rounded-lg px-2 py-3 text-xs font-medium sm:px-3 sm:text-sm ${tab === key ? "btn-accent" : "bg-slate-100 text-slate-900 dark:bg-slate-700 dark:text-slate-100"}`}
           >
-            {key}
+            {label}
           </button>
         ))}
       </nav>
@@ -304,7 +698,10 @@ export default function Home() {
             onRefresh={refreshCore}
           />
           <section className="rounded-xl bg-card p-4 shadow-sm">
-            <h2 className="mb-3 text-lg font-semibold">Trainee progress</h2>
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+              <h2 className="text-lg font-semibold">Trainee progress</h2>
+              {canTrain ? <AddTraineeModalFlow onRefresh={refreshCore} /> : null}
+            </div>
             <input
               className="mb-3 w-full rounded-lg border p-3"
               placeholder="Search trainees..."
@@ -313,17 +710,21 @@ export default function Home() {
             />
             <div className="space-y-3">
               {filteredDashboard.map((row) => (
-                <div key={row.id} className="rounded-lg border p-3">
-                  <div className="flex items-center justify-between">
+                <button
+                  key={row.id}
+                  type="button"
+                  className="w-full rounded-lg border p-3 text-left transition hover:bg-slate-50 focus-visible:outline focus-visible:ring-2 focus-visible:ring-slate-400 dark:hover:bg-slate-800/60"
+                  onClick={() => setDashboardModalTraineeId(row.id)}
+                >
+                  <div className="flex items-center justify-between gap-2">
                     <strong>{row.name}</strong>
-                    <span className="text-sm font-semibold">{row.percentage}%</span>
+                    <span className="shrink-0 text-sm font-semibold">{row.percentage}%</span>
                   </div>
-                  <p className="text-sm opacity-70">{row.positions.join(", ") || "No positions assigned"}</p>
-                  <p className="text-sm">Done {row.completedItems} / {row.totalItems} • Remaining {row.remainingItems}</p>
-                  <a className="mt-2 inline-block text-sm text-blue-600 underline" href={`/api/export/trainee/${row.id}`}>
-                    Export CSV
-                  </a>
-                </div>
+                  <p className="text-sm">
+                    Done {row.positionsFullyComplete}/{row.storePositionCount} Remaining{" "}
+                    {row.remainingPositions}
+                  </p>
+                </button>
               ))}
             </div>
           </section>
@@ -332,58 +733,36 @@ export default function Home() {
 
       {tab === "workflow" && (
         <section className="rounded-xl bg-card p-4 shadow-sm">
-          <h2 className="mb-3 text-lg font-semibold">Live Training Workflow</h2>
-          <div className="grid gap-2 sm:grid-cols-2">
-            <select className="rounded-lg border p-3" value={selectedTraineeId} onChange={(e) => setSelectedTraineeId(e.target.value)}>
+          <h2 className="mb-3 text-lg font-semibold">Live Training</h2>
+          <div className="flex max-w-md flex-col gap-2">
+            <select
+              className="w-full rounded-lg border border-slate-200 bg-card p-3 text-foreground dark:border-slate-600"
+              value={selectedTraineeId}
+              onChange={(e) => setSelectedTraineeId(e.target.value)}
+            >
               <option value="">Select trainee</option>
-              {trainees.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+              {trainees.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name}
+                </option>
+              ))}
             </select>
-            <select className="rounded-lg border p-3" value={selectedPositionId} onChange={(e) => setSelectedPositionId(e.target.value)}>
-              <option value="">Select position</option>
-              {positions.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </select>
-          </div>
-          <button
-            className="btn-accent mt-2 rounded-lg px-4 py-3"
-            onClick={() => refreshProgress(selectedTraineeId, selectedPositionId)}
-          >
-            Load Checklist
-          </button>
-          <div className="mt-3 space-y-2">
-            {progressItems.map((item) => (
-              <label key={item.id} className="flex items-start gap-3 rounded-lg border p-3">
-                <input
-                  type="checkbox"
-                  checked={item.completed}
-                  disabled={!canTrain}
-                  className="mt-1 h-6 w-6"
-                  onChange={async (e) => {
-                    await api("/api/progress", {
-                      method: "POST",
-                      body: JSON.stringify({
-                        traineeId: selectedTraineeId,
-                        checklistItemId: item.id,
-                        completed: e.target.checked,
-                      }),
-                    });
-                    await refreshProgress(selectedTraineeId, selectedPositionId);
-                  }}
-                />
-                <span className="flex-1">
-                  <strong>{item.text}</strong>
-                  {item.description && <p className="text-sm opacity-70">{item.description}</p>}
-                  {item.completedAt && (
-                    <p className="text-xs opacity-70">
-                      {item.trainerName} • {new Date(item.completedAt).toLocaleString()}
-                    </p>
-                  )}
-                </span>
-              </label>
-            ))}
+            <button
+              type="button"
+              className="btn-accent w-full rounded-lg px-4 py-3 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
+              disabled={!selectedTraineeId}
+              onClick={() => {
+                if (!selectedTraineeId) return;
+                window.open(`/workflow/${selectedTraineeId}`, "_blank", "noopener,noreferrer");
+              }}
+            >
+              Load Checklist
+            </button>
           </div>
         </section>
       )}
 
+      {/* Trainees tab hidden — see commented TraineePanel below
       {tab === "trainees" && (
         <TraineePanel
           positions={positions}
@@ -392,15 +771,16 @@ export default function Home() {
           onRefresh={refreshCore}
         />
       )}
+      */}
 
-      {tab === "activity" && (
+      {canViewActivity && tab === "activity" && (
         <section className="rounded-xl bg-card p-4 shadow-sm">
           <h2 className="mb-3 text-lg font-semibold">Activity Feed</h2>
           <div className="space-y-2">
             {activity.map((log) => (
               <div key={log.id} className="rounded-lg border p-3 text-sm">
                 <p>{log.message}</p>
-                <p className="opacity-70">{log.actor} • {new Date(log.createdAt).toLocaleString()}</p>
+                <p className="opacity-70">{log.actor} • {formatDateTime(log.createdAt)}</p>
               </div>
             ))}
           </div>
@@ -416,6 +796,8 @@ export default function Home() {
           positions={positions}
           category={settingsCategory}
           appearance={appearance}
+          appearanceReady={appearanceReady}
+          systemPrefersDark={systemPrefersDark}
           setCategory={setSettingsCategory}
           setAppearance={setAppearance}
           refreshCore={refreshCore}
@@ -433,7 +815,109 @@ export default function Home() {
           }}
         />
       )}
+
+      {dashboardModalRow && (
+        <TraineeDashboardModal
+          row={dashboardModalRow}
+          onClose={() => setDashboardModalTraineeId(null)}
+        />
+      )}
     </main>
+  );
+}
+
+/** Six-cell invite code entry; digits stored in `User`-facing order left-to-right. */
+function InviteCodeSixDigit({
+  slots,
+  onSlotsChange,
+}: {
+  slots: string[];
+  onSlotsChange: (next: string[]) => void;
+}) {
+  const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
+
+  const setSlots = onSlotsChange;
+
+  function focusSlot(i: number) {
+    inputRefs.current[i]?.focus();
+    inputRefs.current[i]?.select();
+  }
+
+  function handleDigit(i: number, raw: string) {
+    const digit = raw.replace(/\D/g, "").slice(-1);
+    const next = [...slots];
+    if (digit) {
+      next[i] = digit;
+      setSlots(next);
+      if (i < 5) focusSlot(i + 1);
+    } else {
+      next[i] = "";
+      setSlots(next);
+    }
+  }
+
+  function handleKeyDown(i: number, e: ReactKeyboardEvent<HTMLInputElement>) {
+    if (e.key === "Backspace" && !slots[i] && i > 0) {
+      e.preventDefault();
+      const next = [...slots];
+      next[i - 1] = "";
+      setSlots(next);
+      focusSlot(i - 1);
+    }
+  }
+
+  function handlePaste(i: number, e: ReactClipboardEvent<HTMLInputElement>) {
+    const text = e.clipboardData.getData("text").replace(/\D/g, "").slice(0, 6);
+    if (text.length === 6) {
+      e.preventDefault();
+      setSlots(text.split(""));
+      focusSlot(5);
+    } else if (text.length > 0 && i === 0) {
+      e.preventDefault();
+      const next = [...slots];
+      for (let j = 0; j < 6; j++) next[j] = text[j] ?? "";
+      setSlots(next);
+      const last = Math.min(text.length - 1, 5);
+      focusSlot(last);
+    }
+  }
+
+  return (
+    <div className="mb-6 rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 p-4 dark:border-slate-500 dark:bg-slate-900/40">
+      <p className="mb-3 text-center text-sm font-semibold tracking-wide text-foreground">
+        Invite code
+      </p>
+      <div className="flex justify-center gap-2 sm:gap-3">
+        {slots.map((ch, i) => (
+          <div
+            key={i}
+            className="relative flex-1 max-w-[4rem] rounded-lg border-2 border-slate-300 bg-card shadow-inner dark:border-slate-500 dark:bg-card"
+          >
+            <label htmlFor={`invite-digit-${i}`} className="sr-only">
+              Digit {i + 1} of 6
+            </label>
+            <input
+              ref={(el) => {
+                inputRefs.current[i] = el;
+              }}
+              id={`invite-digit-${i}`}
+              type="text"
+              inputMode="numeric"
+              autoComplete={i === 0 ? "one-time-code" : "off"}
+              maxLength={1}
+              value={ch}
+              aria-label={`Invite code digit ${i + 1} of 6`}
+              className="min-h-[4rem] h-16 w-full rounded-[inherit] border-0 bg-transparent text-center text-4xl font-semibold tabular-nums leading-none text-foreground outline-none ring-0 transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--accent,#dc2626)] focus-visible:outline-offset-[-2px]"
+              onChange={(e) => handleDigit(i, e.target.value)}
+              onKeyDown={(e) => handleKeyDown(i, e)}
+              onPaste={(e) => handlePaste(i, e)}
+              onFocus={(e) => e.target.select()}
+            />
+          </div>
+        ))}
+      </div>
+      <p className="mt-3 text-center text-xs opacity-70">Enter the 6-digit code from your manager</p>
+    </div>
   );
 }
 
@@ -447,9 +931,23 @@ function AuthScreen({
   error: string;
 }) {
   const [mode, setMode] = useState<AuthMode>("login");
+  const [inviteSlots, setInviteSlots] = useState<string[]>(() => Array.from({ length: 6 }, () => ""));
+
+  useEffect(() => {
+    if (mode === "register-trainer") {
+      setInviteSlots(Array.from({ length: 6 }, () => ""));
+    }
+  }, [mode]);
 
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    if (mode === "register-trainer") {
+      const code = inviteSlots.join("");
+      if (!/^\d{6}$/.test(code)) {
+        onError("Enter the full 6-digit invite code.");
+        return;
+      }
+    }
     const formData = new FormData(e.currentTarget);
     onError("");
     try {
@@ -461,7 +959,7 @@ function AuthScreen({
             : "/api/auth/register-trainer";
       const payload = (() => {
         if (mode === "login") {
-          return { email: formData.get("email"), password: formData.get("password") };
+          return { identifier: formData.get("identifier"), password: formData.get("password") };
         }
         if (mode === "register-admin") {
           return {
@@ -474,7 +972,7 @@ function AuthScreen({
         return {
           inviteCode: formData.get("inviteCode"),
           name: formData.get("name"),
-          email: formData.get("email"),
+          username: formData.get("username"),
           password: formData.get("password"),
         };
       })();
@@ -489,48 +987,190 @@ function AuthScreen({
   }
 
   return (
-    <main className="mx-auto flex min-h-screen w-full max-w-md items-center p-4">
-      <form onSubmit={submit} className="w-full rounded-xl bg-card p-5 shadow-sm">
+    <main className="mx-auto flex min-h-[100dvh] w-full max-w-md flex-col justify-center px-4 py-8">
+      <form
+        onSubmit={submit}
+        className="relative z-10 w-full rounded-xl bg-card p-5 shadow-sm"
+        autoComplete="on"
+      >
         <h1 className="text-2xl font-bold">Training Tracker</h1>
         <p className="mb-4 text-sm opacity-75">Mobile-first training for fast shifts.</p>
-        {mode === "register-admin" && <input name="storeName" placeholder="Store name" className="mb-2 w-full rounded-lg border p-3" required />}
-        {mode !== "login" && <input name="name" placeholder="Your name" className="mb-2 w-full rounded-lg border p-3" required />}
         {mode === "register-trainer" && (
+          <>
+            <InviteCodeSixDigit slots={inviteSlots} onSlotsChange={setInviteSlots} />
+            <input type="hidden" name="inviteCode" value={inviteSlots.join("")} readOnly />
+          </>
+        )}
+        {mode === "register-admin" && (
           <input
-            name="inviteCode"
-            placeholder="6-digit invite code"
-            className="mb-2 w-full rounded-lg border p-3"
-            pattern="\d{6}"
-            minLength={6}
-            maxLength={6}
+            name="storeName"
+            placeholder="Store name"
+            className="mb-2 w-full rounded-lg border p-3 text-base"
             required
+            autoComplete="organization"
           />
         )}
-        <input name="email" type="email" placeholder="Email" className="mb-2 w-full rounded-lg border p-3" required />
-        <input name="password" type="password" placeholder="Password (min 8)" className="mb-2 w-full rounded-lg border p-3" required minLength={8} />
+        {mode !== "login" && (
+          <input
+            name="name"
+            placeholder="Full name"
+            className="mb-2 w-full rounded-lg border p-3 text-base"
+            required
+            autoComplete="name"
+          />
+        )}
+        {mode === "login" && (
+          <input
+            name="identifier"
+            type="text"
+            placeholder="Email or username"
+            className="mb-2 w-full rounded-lg border p-3 text-base"
+            required
+            autoComplete="username"
+          />
+        )}
+        {mode === "register-admin" && (
+          <input
+            name="email"
+            type="email"
+            placeholder="Email address"
+            className="mb-2 w-full rounded-lg border p-3 text-base"
+            required
+            autoComplete="email"
+          />
+        )}
+        {mode === "register-trainer" && (
+          <input
+            name="username"
+            type="text"
+            placeholder="Username"
+            className="mb-2 w-full rounded-lg border p-3 text-base"
+            required
+            minLength={2}
+            maxLength={64}
+            pattern="[a-zA-Z0-9._-]+"
+            title="Letters, numbers, dots, dashes, and underscores only"
+            autoComplete="username"
+          />
+        )}
+        <input
+          name="password"
+          type="password"
+          placeholder="Password (min 8)"
+          className="mb-2 w-full rounded-lg border p-3 text-base"
+          required
+          minLength={8}
+          autoComplete={mode === "login" ? "current-password" : "new-password"}
+          enterKeyHint="go"
+        />
         {error && <p className="mb-2 text-sm text-rose-600">{error}</p>}
-        <button className="btn-accent w-full rounded-lg p-3 font-semibold">
+        <button
+          type="submit"
+          className="btn-accent min-h-12 w-full touch-manipulation rounded-lg p-3 text-base font-semibold"
+        >
           {mode === "login" ? "Sign in" : mode === "register-admin" ? "Create store" : "Create trainer account"}
         </button>
-        <div className="mt-2 space-y-1 text-center text-sm">
+        <div className="mt-3 space-y-2 text-center text-sm">
           {mode !== "login" && (
-            <button type="button" className="w-full underline" onClick={() => setMode("login")}>
+            <button
+              type="button"
+              className="min-h-12 w-full touch-manipulation rounded-lg px-2 py-3 text-base underline underline-offset-2"
+              onClick={() => setMode("login")}
+            >
               Already have an account? Sign in
             </button>
           )}
           {mode !== "register-admin" && (
-            <button type="button" className="w-full underline" onClick={() => setMode("register-admin")}>
+            <button
+              type="button"
+              className="min-h-12 w-full touch-manipulation rounded-lg px-2 py-3 text-base underline underline-offset-2"
+              onClick={() => setMode("register-admin")}
+            >
               Create a new store (owner)
             </button>
           )}
           {mode !== "register-trainer" && (
-            <button type="button" className="w-full underline" onClick={() => setMode("register-trainer")}>
-              Trainer create account with invite code
+            <button
+              type="button"
+              className="min-h-12 w-full touch-manipulation rounded-lg px-2 py-3 text-base underline underline-offset-2"
+              onClick={() => setMode("register-trainer")}
+            >
+              Sign up with invite code
             </button>
           )}
         </div>
       </form>
     </main>
+  );
+}
+
+/** Scrollable comment list with edge fades only when more content exists above/below. */
+function AnnouncementCommentsScrollArea({
+  commentCount,
+  children,
+}: {
+  commentCount: number;
+  children: ReactNode;
+}) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [showTopFade, setShowTopFade] = useState(false);
+  const [showBottomFade, setShowBottomFade] = useState(false);
+
+  const updateFadeEdges = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const { scrollTop, scrollHeight, clientHeight } = el;
+    const epsilon = 4;
+    const hasOverflow = scrollHeight > clientHeight + epsilon;
+    if (!hasOverflow) {
+      setShowTopFade(false);
+      setShowBottomFade(false);
+      return;
+    }
+    setShowTopFade(scrollTop > epsilon);
+    setShowBottomFade(scrollTop + clientHeight < scrollHeight - epsilon);
+  }, []);
+
+  useLayoutEffect(() => {
+    updateFadeEdges();
+    const id = requestAnimationFrame(() => updateFadeEdges());
+    return () => cancelAnimationFrame(id);
+  }, [updateFadeEdges, commentCount]);
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => updateFadeEdges());
+    ro.observe(el);
+    window.addEventListener("resize", updateFadeEdges);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", updateFadeEdges);
+    };
+  }, [updateFadeEdges]);
+
+  return (
+    <div className="relative overflow-hidden rounded-md border border-neutral-200/80 bg-white/90 dark:border-slate-600 dark:bg-slate-900/40">
+      {showTopFade && (
+        <div
+          className="pointer-events-none absolute inset-x-0 top-0 z-10 h-8 bg-gradient-to-b from-slate-900/18 via-slate-900/6 to-transparent dark:from-black/60 dark:via-black/25"
+          aria-hidden
+        />
+      )}
+      <div
+        ref={scrollRef}
+        onScroll={updateFadeEdges}
+        className="max-h-40 overflow-y-auto overscroll-contain pr-1"
+      >
+        {children}
+      </div>
+      {showBottomFade && (
+        <div
+          className="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-8 bg-gradient-to-t from-slate-900/18 via-slate-900/6 to-transparent dark:from-black/60 dark:via-black/25"
+          aria-hidden
+        />
+      )}
+    </div>
   );
 }
 
@@ -553,53 +1193,104 @@ function AnnouncementsSection({
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   const [postErr, setPostErr] = useState("");
+  const [createAnnouncementOpen, setCreateAnnouncementOpen] = useState(false);
   const [commentText, setCommentText] = useState<Record<string, string>>({});
   const [commentsOpen, setCommentsOpen] = useState<Record<string, boolean>>({});
 
+  useEffect(() => {
+    if (!createAnnouncementOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setCreateAnnouncementOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [createAnnouncementOpen]);
+
   return (
     <section className="mb-4 rounded-xl bg-card p-4 shadow-sm">
-      <h2 className="mb-3 text-lg font-semibold">Announcements</h2>
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-lg font-semibold">Announcements</h2>
+        {canPostAnnouncements && (
+          <button
+            type="button"
+            className="btn-accent rounded-lg px-4 py-2 text-sm font-medium"
+            onClick={() => {
+              setPostErr("");
+              setCreateAnnouncementOpen(true);
+            }}
+          >
+            Create Announcement
+          </button>
+        )}
+      </div>
 
-      {canPostAnnouncements && (
-        <form
-          className="mb-4 rounded-lg border p-3"
-          onSubmit={async (e) => {
-            e.preventDefault();
-            setPostErr("");
-            try {
-              await api("/api/announcements", {
-                method: "POST",
-                body: JSON.stringify({ title, body }),
-              });
-              setTitle("");
-              setBody("");
-              await onRefresh();
-            } catch (err) {
-              setPostErr((err as Error).message);
-            }
+      {createAnnouncementOpen && canPostAnnouncements && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="create-announcement-title"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) setCreateAnnouncementOpen(false);
           }}
         >
-          <p className="mb-2 text-sm font-medium">Post an update</p>
-          <input
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder="Title"
-            className="mb-2 w-full rounded-lg border p-3"
-            required
-          />
-          <textarea
-            value={body}
-            onChange={(e) => setBody(e.target.value)}
-            placeholder="Message to your team..."
-            rows={3}
-            className="mb-2 w-full rounded-lg border p-3"
-            required
-          />
-          {postErr && <p className="mb-2 text-sm text-rose-600">{postErr}</p>}
-          <button type="submit" className="btn-accent rounded-lg px-4 py-2">
-            Publish
-          </button>
-        </form>
+          <div
+            className="w-full max-w-lg rounded-xl border bg-card p-5 shadow-xl"
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <h3 id="create-announcement-title" className="mb-3 text-lg font-semibold">
+              Post an update
+            </h3>
+            <form
+              className="space-y-3"
+              onSubmit={async (e) => {
+                e.preventDefault();
+                setPostErr("");
+                try {
+                  await api("/api/announcements", {
+                    method: "POST",
+                    body: JSON.stringify({ title, body }),
+                  });
+                  setTitle("");
+                  setBody("");
+                  setCreateAnnouncementOpen(false);
+                  await onRefresh();
+                } catch (err) {
+                  setPostErr((err as Error).message);
+                }
+              }}
+            >
+              <input
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="Title"
+                className="w-full rounded-lg border bg-background p-3"
+                required
+              />
+              <textarea
+                value={body}
+                onChange={(e) => setBody(e.target.value)}
+                placeholder="Message to your team..."
+                rows={4}
+                className="w-full rounded-lg border bg-background p-3"
+                required
+              />
+              {postErr && <p className="text-sm text-rose-600">{postErr}</p>}
+              <div className="flex flex-wrap justify-end gap-2 pt-1">
+                <button
+                  type="button"
+                  className="rounded-lg border px-4 py-2 text-sm font-medium"
+                  onClick={() => setCreateAnnouncementOpen(false)}
+                >
+                  Cancel
+                </button>
+                <button type="submit" className="btn-accent rounded-lg px-4 py-2 text-sm font-medium">
+                  Publish
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
 
       <div className="space-y-3">
@@ -613,7 +1304,7 @@ function AnnouncementsSection({
                 <h3 className="font-semibold">{a.title}</h3>
                 <p className="mt-1 whitespace-pre-wrap text-sm">{a.body}</p>
                 <p className="mt-2 text-xs opacity-70">
-                  {a.authorName} • {new Date(a.createdAt).toLocaleString()}
+                  {a.authorName} • {formatDateTime(a.createdAt)}
                 </p>
               </div>
               {canDeleteAnnouncements && (
@@ -646,19 +1337,26 @@ function AnnouncementsSection({
                 {commentsOpen[a.id] && (
                   <div className="mt-3 rounded-lg border border-neutral-200 bg-[#f7f7f7] p-3 text-black shadow-inner dark:border-slate-600 dark:bg-slate-800/90 dark:text-slate-100 dark:shadow-inner dark:shadow-black/30">
                     {a.comments.length > 0 && (
-                      <ul className="space-y-2 text-sm">
-                        {a.comments.map((c) => (
-                          <li
-                            key={c.id}
-                            className="rounded-md border border-neutral-200 bg-white px-3 py-2.5 text-black shadow-sm dark:border-slate-500 dark:bg-slate-700 dark:text-slate-50 dark:shadow-md dark:shadow-black/20"
-                          >
-                            <p className="leading-relaxed text-black dark:text-slate-50">{c.body}</p>
-                            <p className="mt-2 text-xs text-neutral-600 dark:text-slate-400">
-                              {c.userName} • {new Date(c.createdAt).toLocaleString()}
-                            </p>
-                          </li>
-                        ))}
-                      </ul>
+                      <AnnouncementCommentsScrollArea commentCount={a.comments.length}>
+                        <ul className="divide-y divide-neutral-200 dark:divide-slate-600">
+                          {a.comments.map((c) => (
+                            <li
+                              key={c.id}
+                              className="flex flex-col gap-0.5 px-2 py-2 text-sm"
+                            >
+                              <p
+                                className="line-clamp-1 min-w-0 break-words text-black dark:text-slate-50"
+                                title={c.body}
+                              >
+                                {c.body}
+                              </p>
+                              <p className="text-xs text-neutral-600 dark:text-slate-400">
+                                {c.userName} • {formatDateTime(c.createdAt)}
+                              </p>
+                            </li>
+                          ))}
+                        </ul>
+                      </AnnouncementCommentsScrollArea>
                     )}
 
                     {canComment && (
@@ -700,6 +1398,104 @@ function AnnouncementsSection({
   );
 }
 
+function AddTraineeModalFlow({ onRefresh }: { onRefresh: () => Promise<void> }) {
+  const [name, setName] = useState("");
+  const [err, setErr] = useState("");
+  const [addTraineeOpen, setAddTraineeOpen] = useState(false);
+
+  useEffect(() => {
+    if (!addTraineeOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setAddTraineeOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [addTraineeOpen]);
+
+  return (
+    <>
+      <button
+        type="button"
+        className="btn-accent rounded-lg px-4 py-2 text-sm font-medium"
+        onClick={() => {
+          setErr("");
+          setName("");
+          setAddTraineeOpen(true);
+        }}
+      >
+        Add Trainee
+      </button>
+
+      {addTraineeOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="add-trainee-title"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) setAddTraineeOpen(false);
+          }}
+        >
+          <div
+            className="max-h-[min(90vh,720px)] w-full max-w-lg overflow-y-auto rounded-xl border bg-card p-5 shadow-xl"
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <h3 id="add-trainee-title" className="mb-3 text-lg font-semibold">
+              Add Trainee
+            </h3>
+            <form
+              className="space-y-3"
+              onSubmit={async (e) => {
+                e.preventDefault();
+                setErr("");
+                try {
+                  await api("/api/trainees", {
+                    method: "POST",
+                    body: JSON.stringify({ name }),
+                  });
+                  setName("");
+                  setAddTraineeOpen(false);
+                  await onRefresh();
+                } catch (error) {
+                  setErr((error as Error).message);
+                }
+              }}
+            >
+              <label htmlFor="add-trainee-name" className="sr-only">
+                Name
+              </label>
+              <input
+                id="add-trainee-name"
+                name="name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Name"
+                className="w-full rounded-lg border bg-background p-3"
+                required
+                autoComplete="name"
+              />
+              {err && <p className="text-sm text-rose-600">{err}</p>}
+              <div className="flex flex-wrap justify-end gap-2 pt-1">
+                <button
+                  type="button"
+                  className="rounded-lg border px-4 py-2 text-sm font-medium"
+                  onClick={() => setAddTraineeOpen(false)}
+                >
+                  Cancel
+                </button>
+                <button type="submit" className="btn-accent rounded-lg px-4 py-2 text-sm font-medium">
+                  Save
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+/* Trainees tab — entire panel commented out; uncomment + restore nav entry above to show again.
 function TraineePanel({
   positions,
   trainees,
@@ -711,99 +1507,35 @@ function TraineePanel({
   canTrain: boolean;
   onRefresh: () => Promise<void>;
 }) {
-  const [name, setName] = useState("");
-  const [startDate, setStartDate] = useState("");
-  const [selectedPositionIds, setSelectedPositionIds] = useState<string[]>([]);
-  const [err, setErr] = useState("");
-
-  function togglePosition(positionId: string) {
-    setSelectedPositionIds((prev) =>
-      prev.includes(positionId)
-        ? prev.filter((id) => id !== positionId)
-        : [...prev, positionId],
-    );
-  }
-
   if (!canTrain) return <section className="rounded-xl bg-card p-4 shadow-sm">View only access.</section>;
   return (
     <section className="rounded-xl bg-card p-4 shadow-sm">
-      <form
-        className="rounded-lg border p-3"
-        onSubmit={async (e) => {
-          e.preventDefault();
-          setErr("");
-          try {
-            await api("/api/trainees", {
-              method: "POST",
-              body: JSON.stringify({
-                name,
-                startDate,
-                positionIds: selectedPositionIds,
-              }),
-            });
-            setName("");
-            setStartDate("");
-            setSelectedPositionIds([]);
-            await onRefresh();
-          } catch (error) {
-            setErr((error as Error).message);
-          }
-        }}
-      >
-        <h3 className="mb-2 font-semibold">Add Trainee</h3>
-        <input
-          name="name"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder="Name"
-          className="mb-2 w-full rounded-lg border p-3"
-          required
-        />
-        <input
-          name="startDate"
-          type="date"
-          value={startDate}
-          onChange={(e) => setStartDate(e.target.value)}
-          className="mb-2 w-full rounded-lg border p-3"
-          required
-        />
-        <label className="mb-1 block text-sm font-medium">Assigned Positions</label>
-        {positions.length === 0 ? (
-          <p className="mb-2 text-sm opacity-70">Create positions first in the Admin tab.</p>
-        ) : (
-          <div className="mb-2 max-h-44 space-y-2 overflow-auto rounded-lg border p-2">
-            {positions.map((position) => (
-              <label key={position.id} className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={selectedPositionIds.includes(position.id)}
-                  onChange={() => togglePosition(position.id)}
-                  className="h-5 w-5"
-                />
-                <span>{position.name}</span>
-              </label>
-            ))}
-          </div>
-        )}
-        {err && <p className="mb-2 text-sm text-rose-600">{err}</p>}
-        <button className="btn-accent rounded-lg px-4 py-2">Save</button>
-      </form>
-      <div className="mt-4 space-y-2">
-        {trainees.map((t) => (
-          <div key={t.id} className="rounded-lg border p-3 text-sm">
-            <p className="font-semibold">{t.name}</p>
-            <p>{new Date(t.startDate).toLocaleDateString()}</p>
-            <p className="opacity-70">
-              {(t.positions || [])
-                .map((x) => positions.find((p) => p.id === x.positionId)?.name || x.position.name)
-                .join(", ") || "No positions"}
-            </p>
-          </div>
-        ))}
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-lg font-semibold">Trainees</h2>
+        <AddTraineeModalFlow onRefresh={onRefresh} />
+      </div>
+
+      <div className="space-y-2">
+        {trainees.map((t) => {
+          const positionLabels = (t.positions || [])
+            .map((x) => positions.find((p) => p.id === x.positionId)?.name || x.position.name)
+            .join(", ")
+            .trim();
+          return (
+            <div key={t.id} className="rounded-lg border p-3 text-sm">
+              <p className="font-semibold">{t.name}</p>
+              <p>
+                Joined {new Date(t.startDate).toLocaleDateString()}
+              </p>
+              {positionLabels ? <p className="opacity-70">{positionLabels}</p> : null}
+            </div>
+          );
+        })}
       </div>
     </section>
   );
 }
+*/
 
 /** Positions and checklists — Settings → Training Setup (managers only). */
 function TrainingSetupSection({
@@ -975,7 +1707,7 @@ function PositionTrainingRow({
           onClick={() => setExpanded((v) => !v)}
           aria-expanded={expanded}
         >
-          <span className="text-xs opacity-60">{expanded ? "▼" : "▶"}</span>
+          <ChevronDisclosureIcon expanded={expanded} />
           <span className="truncate">{position.name}</span>
           {position.hidden && (
             <span className="shrink-0 rounded bg-slate-200 px-1.5 py-0.5 text-xs dark:bg-slate-600">
@@ -986,7 +1718,7 @@ function PositionTrainingRow({
         <div className="relative shrink-0" ref={menuRef}>
           <button
             type="button"
-            className="rounded-lg border px-2 py-1 text-lg leading-none text-foreground"
+            className="inline-flex items-center justify-center rounded-lg border px-2 py-1 text-foreground"
             aria-label="Position options"
             aria-expanded={menuOpen}
             onClick={(e) => {
@@ -994,7 +1726,7 @@ function PositionTrainingRow({
               setMenuOpen((o) => !o);
             }}
           >
-            ⋯
+            <EllipsisHorizontalIcon className="h-5 w-5" />
           </button>
           {menuOpen && (
             <div className="absolute right-0 z-20 mt-1 min-w-[11rem] rounded-lg border bg-card py-1 shadow-lg">
@@ -1217,7 +1949,7 @@ function TrainerInviteModal({
         <p className="mt-4 font-mono text-2xl tracking-widest">{inviteCode ?? "—"}</p>
         {expiresAt && inviteCode && (
           <p className="mt-2 text-xs opacity-70">
-            Expires {new Date(expiresAt).toLocaleString()}
+            Expires {formatDateTime(expiresAt)}
           </p>
         )}
         {!inviteCode && (
@@ -1335,6 +2067,8 @@ function SettingsPanel({
   positions,
   category,
   appearance,
+  appearanceReady,
+  systemPrefersDark,
   setCategory,
   setAppearance,
   refreshCore,
@@ -1348,6 +2082,8 @@ function SettingsPanel({
   positions: Position[];
   category: SettingsCategory;
   appearance: AppearanceSettings;
+  appearanceReady: boolean;
+  systemPrefersDark: boolean;
   setCategory: (value: SettingsCategory) => void;
   setAppearance: Dispatch<SetStateAction<AppearanceSettings>>;
   refreshCore: () => Promise<void>;
@@ -1401,8 +2137,8 @@ function SettingsPanel({
               {key === "account" && "Account"}
               {key === "store" && "Store Details"}
               {key === "appearance" && "Appearance"}
-              {key === "trainingSetup" && "Training Setup"}
-              {key === "trainers" && "Trainer Management"}
+              {key === "trainingSetup" && "Position Setup"}
+              {key === "trainers" && "User Management"}
             </button>
           ))}
         </aside>
@@ -1416,7 +2152,7 @@ function SettingsPanel({
               <p><strong>Store:</strong> {accountDetails?.storeName ?? user.storeName}</p>
               <p>
                 <strong>Account Created:</strong>{" "}
-                {accountDetails?.createdAt ? new Date(accountDetails.createdAt).toLocaleString() : "-"}
+                {accountDetails?.createdAt ? formatDateTime(accountDetails.createdAt) : "-"}
               </p>
               <button className="rounded-lg bg-rose-600 px-4 py-2 text-white" onClick={onLogout}>
                 Log Out
@@ -1429,7 +2165,7 @@ function SettingsPanel({
               <p><strong>Store Name:</strong> {storeDetails?.name ?? "-"}</p>
               <p>
                 <strong>Created:</strong>{" "}
-                {storeDetails?.createdAt ? new Date(storeDetails.createdAt).toLocaleString() : "-"}
+                {storeDetails?.createdAt ? formatDateTime(storeDetails.createdAt) : "-"}
               </p>
               <p>
                 <strong>Users:</strong> {storeDetails?._count.users ?? 0} |{" "}
@@ -1528,19 +2264,94 @@ function SettingsPanel({
 
           {category === "appearance" && (
             <div className="space-y-3 text-sm">
-              <label className="flex items-center justify-between gap-2">
-                <span>Dark mode</span>
-                <input
-                  type="checkbox"
-                  checked={appearance.darkMode}
-                  onChange={() => setAppearance((prev) => ({ ...prev, darkMode: !prev.darkMode }))}
-                />
-              </label>
-              <label className="block">
+              {!appearanceReady && (
+                <p className="text-xs opacity-70">Loading your saved appearance…</p>
+              )}
+              {(() => {
+                const effectiveDark = appearance.followSystemTheme
+                  ? systemPrefersDark
+                  : appearance.darkMode;
+                const switchShowsDark = appearance.followSystemTheme
+                  ? systemPrefersDark
+                  : appearance.darkMode;
+                const manualLocked = !appearanceReady || appearance.followSystemTheme;
+                return (
+                  <div
+                    className={`flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4 ${!appearanceReady ? "pointer-events-none opacity-50" : ""}`}
+                  >
+                    <span className="font-medium">
+                      {effectiveDark ? "Dark mode" : "Light mode"}
+                    </span>
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={switchShowsDark}
+                      aria-label={effectiveDark ? "Dark mode" : "Light mode"}
+                      disabled={manualLocked}
+                      onClick={() =>
+                        setAppearance((prev) => ({ ...prev, darkMode: !prev.darkMode }))
+                      }
+                      className={`relative h-10 w-[4.5rem] shrink-0 overflow-hidden rounded-full border-2 transition-colors max-sm:h-9 max-sm:w-16 ${
+                        manualLocked
+                          ? "cursor-not-allowed opacity-45"
+                          : "cursor-pointer touch-manipulation"
+                      } ${
+                        switchShowsDark
+                          ? "border-indigo-500/60 bg-indigo-950/40"
+                          : "border-amber-300/80 bg-amber-50 dark:border-amber-700/50 dark:bg-amber-950/30"
+                      }`}
+                    >
+                      <span
+                        className={`absolute top-1 left-1 z-20 flex h-8 w-8 items-center justify-center rounded-full bg-white shadow-md ring-1 ring-black/5 transition-transform duration-200 ease-out dark:bg-slate-800 dark:ring-white/10 max-sm:top-0.5 max-sm:left-0.5 max-sm:h-7 max-sm:w-7 ${
+                          switchShowsDark
+                            ? "translate-x-[2rem] max-sm:translate-x-[1.75rem]"
+                            : "translate-x-0"
+                        }`}
+                      >
+                        {switchShowsDark ? (
+                          <MoonIcon className="h-4 w-4 text-indigo-600 dark:text-indigo-300 max-sm:h-3 max-sm:w-3" />
+                        ) : (
+                          <SunIcon className="h-4 w-4 text-amber-600 max-sm:h-3 max-sm:w-3" />
+                        )}
+                      </span>
+                      {/* Desktop-only track hints — hidden on small screens so icons/touches aren’t crowded */}
+                      <span className="pointer-events-none absolute inset-0 z-0 hidden items-center justify-between px-2.5 opacity-70 sm:flex">
+                        <SunIcon className="h-3.5 w-3.5 text-amber-700/90 dark:text-amber-300/90" />
+                        <MoonIcon className="h-3.5 w-3.5 text-indigo-600/90 dark:text-indigo-300/90" />
+                      </span>
+                    </button>
+                  </div>
+                );
+              })()}
+              <div
+                className={`ml-6 border-l-2 border-slate-200 pl-4 dark:border-slate-600 ${!appearanceReady ? "pointer-events-none opacity-50" : ""}`}
+              >
+                <label className="flex cursor-pointer items-center justify-between gap-3">
+                  <span className="text-sm">Follow system setting</span>
+                  <input
+                    type="checkbox"
+                    className="h-5 w-5"
+                    checked={appearance.followSystemTheme}
+                    disabled={!appearanceReady}
+                    onChange={() =>
+                      setAppearance((prev) => ({
+                        ...prev,
+                        followSystemTheme: !prev.followSystemTheme,
+                      }))
+                    }
+                  />
+                </label>
+                <p className="mt-1 text-xs opacity-70">
+                  Match light or dark to your device’s current appearance. When on, the toggle above
+                  follows the system and cannot be edited.
+                </p>
+              </div>
+              <label className={`block ${!appearanceReady ? "pointer-events-none opacity-50" : ""}`}>
                 <span>Font size</span>
                 <select
-                  className="mt-1 w-full rounded-lg border p-2"
+                  className="mt-1 w-full rounded-lg border border-slate-200 bg-card p-2 text-foreground dark:border-slate-600"
                   value={appearance.fontScale}
+                  disabled={!appearanceReady}
                   onChange={(e) =>
                     setAppearance((prev) => ({ ...prev, fontScale: Number(e.target.value) }))
                   }
@@ -1551,27 +2362,29 @@ function SettingsPanel({
                   <option value={1.2}>Extra Large</option>
                 </select>
               </label>
-              <label className="block">
+              <label className={`block ${!appearanceReady ? "pointer-events-none opacity-50" : ""}`}>
                 <span>Accent color</span>
                 <input
                   type="color"
                   className="mt-1 h-10 w-full rounded-lg border p-1"
                   value={appearance.accent}
+                  disabled={!appearanceReady}
                   onChange={(e) => setAppearance((prev) => ({ ...prev, accent: e.target.value }))}
                 />
               </label>
-              <label className="flex items-center justify-between gap-2">
+              <label className={`flex items-center justify-between gap-2 ${!appearanceReady ? "pointer-events-none opacity-50" : ""}`}>
                 <span>Compact cards</span>
                 <input
                   type="checkbox"
                   checked={appearance.compactCards}
+                  disabled={!appearanceReady}
                   onChange={() =>
                     setAppearance((prev) => ({ ...prev, compactCards: !prev.compactCards }))
                   }
                 />
               </label>
               <p className="text-xs opacity-70">
-                Appearance settings are saved per signed-in user on this device only.
+                Saved for your account and synced across devices when you’re signed in.
               </p>
             </div>
           )}
@@ -1628,7 +2441,7 @@ function SettingsPanel({
                         </p>
                       )}
                       <p className="opacity-70">
-                        Joined {new Date(member.createdAt).toLocaleString()}
+                        Joined {formatDateTime(member.createdAt)}
                       </p>
                     </div>
                     <div className="flex flex-col gap-2 sm:items-end">
@@ -1643,7 +2456,7 @@ function SettingsPanel({
                         ) : (
                           <select
                             disabled={isSelf}
-                            className={`min-w-[10rem] rounded-lg border bg-card px-3 py-2 text-sm text-foreground ${isSelf ? "cursor-not-allowed opacity-60" : ""}`}
+                            className={`min-w-[10rem] rounded-lg border border-slate-200 bg-card px-3 py-2 text-sm text-foreground dark:border-slate-600 ${isSelf ? "cursor-not-allowed opacity-60" : ""}`}
                             value={member.role}
                             onChange={async (e) => {
                               if (isSelf) return;

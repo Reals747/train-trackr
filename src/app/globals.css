@@ -7,8 +7,9 @@
   --background: #f5f7fb;
   --foreground: #111827;
   --card: #ffffff;
-  --accent: #2563eb;
+  --accent: #dc2626;
   --font-scale: 1;
+  color-scheme: light;
 }
 
 @theme inline {
@@ -23,6 +24,7 @@
   --background: #0f172a;
   --foreground: #e2e8f0;
   --card: #1e293b;
+  color-scheme: dark;
 }
 
 body {
@@ -39,7 +41,62 @@ textarea {
   font: inherit;
 }
 
+/* Reliable taps on phones (Safari/Chrome): avoids double-tap zoom delay swallowing clicks */
+button,
+[type="button"],
+[type="submit"],
+[type="reset"],
+a[href] {
+  touch-action: manipulation;
+}
+
+/*
+ * Tailwind Preflight sets buttons to cursor: default. Restore the normal “hand” pointer
+ * so desktop users (and some assistive setups) see controls as clickable.
+ */
+button,
+[type="button"],
+[type="submit"],
+[type="reset"],
+input[type="checkbox"],
+input[type="radio"],
+input[type="submit"],
+input[type="button"],
+input[type="reset"],
+input[type="image"],
+a[href],
+select,
+summary,
+label[for] {
+  cursor: pointer;
+}
+
+button:disabled,
+[type="button"]:disabled,
+[type="submit"]:disabled,
+[type="reset"]:disabled,
+select:disabled,
+input[type="checkbox"]:disabled,
+input[type="radio"]:disabled {
+  cursor: not-allowed;
+}
+
 .btn-accent {
   background: var(--accent);
   color: white;
+}
+
+/*
+ * Native <select> / <option>: align with theme variables so closed state and OS dropdown
+ * panels stay readable in dark mode (pairs with `.dark` color-scheme on `html`).
+ */
+select {
+  background-color: var(--card);
+  color: var(--foreground);
+}
+
+select option,
+select optgroup {
+  background-color: var(--card);
+  color: var(--foreground);
 }

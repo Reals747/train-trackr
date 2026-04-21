@@ -1,0 +1,75 @@
+{
+  "OWNER": {
+    "label": "Owner",
+    "description": "Store creator. Cannot be demoted or removed.",
+    "permissions": [
+      "settings.account",
+      "settings.appearance",
+      "settings.store.view",
+      "settings.store.rename",
+      "settings.store.delete",
+      "settings.trainingSetup",
+      "settings.trainers",
+      "members.view",
+      "members.invite",
+      "members.updateRole",
+      "members.remove",
+      "announcements.post",
+      "announcements.delete",
+      "announcements.comment",
+      "trainees.create",
+      "trainees.update",
+      "trainees.delete",
+      "workflow.edit",
+      "activity.view",
+      "positions.manage",
+      "checklistItems.manage"
+    ]
+  },
+  "ADMIN": {
+    "label": "Admin",
+    "description": "Invited manager. Everything except store rename/delete and touching the owner.",
+    "permissions": [
+      "settings.account",
+      "settings.appearance",
+      "settings.store.view",
+      "settings.trainingSetup",
+      "settings.trainers",
+      "members.view",
+      "members.invite",
+      "members.updateRole",
+      "members.remove",
+      "announcements.post",
+      "announcements.delete",
+      "announcements.comment",
+      "trainees.create",
+      "trainees.update",
+      "trainees.delete",
+      "workflow.edit",
+      "activity.view",
+      "positions.manage",
+      "checklistItems.manage"
+    ]
+  },
+  "TRAINER": {
+    "label": "Trainer",
+    "description": "Shift trainer. Train, comment, add trainees.",
+    "permissions": [
+      "settings.account",
+      "settings.appearance",
+      "announcements.comment",
+      "trainees.create",
+      "trainees.update",
+      "workflow.edit"
+    ]
+  },
+  "VIEWER": {
+    "label": "Viewer",
+    "description": "Read-only.",
+    "permissions": [
+      "settings.account",
+      "settings.appearance",
+      "activity.view"
+    ]
+  }
+}

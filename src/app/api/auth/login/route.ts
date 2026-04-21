@@ -4,7 +4,8 @@ import { comparePassword, setAuthCookie, signToken } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
 const schema = z.object({
-  email: z.string().email(),
+  /** Email (owners) or username stored in `User.email` (other roles). */
+  identifier: z.string().min(1),
   password: z.string().min(8),
 });
 
@@ -15,17 +16,18 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Invalid credentials format" }, { status: 400 });
     }
 
-    const user = await prisma.user.findUnique({
-      where: { email: parsed.data.email },
+    const identifier = parsed.data.identifier.trim();
+    const user = await prisma.user.findFirst({
+      where: { email: { equals: identifier, mode: "insensitive" } },
       include: { store: true },
     });
     if (!user) {
-      return NextResponse.json({ error: "Invalid email or password" }, { status: 401 });
+      return NextResponse.json({ error: "Invalid sign-in or password" }, { status: 401 });
     }
 
     const isValid = await comparePassword(parsed.data.password, user.passwordHash);
     if (!isValid) {
-      return NextResponse.json({ error: "Invalid email or password" }, { status: 401 });
+      return NextResponse.json({ error: "Invalid sign-in or password" }, { status: 401 });
     }
 
     const token = signToken({

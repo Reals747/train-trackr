@@ -1,0 +1,160 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  OWNER
+  ADMIN
+  TRAINER
+  VIEWER
+}
+
+model Store {
+  id               String          @id @default(cuid())
+  name             String
+  createdAt        DateTime        @default(now())
+  users            User[]
+  positions        Position[]
+  trainees         Trainee[]
+  activityLogs     ActivityLog[]
+  settings         StoreSetting?
+  announcements    Announcement[]
+}
+
+model User {
+  id                      String               @id @default(cuid())
+  name                    String
+  email                   String               @unique
+  passwordHash            String
+  role                    Role
+  storeId                 String
+  trainerInviteCodeUsed   String?
+  /** Per-user UI prefs (accent, dark mode, etc.) — synced across devices for this account. */
+  appearanceJson        Json?
+  createdAt               DateTime             @default(now())
+  store                   Store                @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  completions             TrainingProgress[]
+  activityLogs            ActivityLog[]
+  announcementsAuthored   Announcement[]       @relation("AnnouncementAuthor")
+  announcementComments    AnnouncementComment[]
+}
+
+model Announcement {
+  id        String                @id @default(cuid())
+  storeId   String
+  title     String
+  body      String
+  authorId  String
+  createdAt DateTime              @default(now())
+  updatedAt DateTime              @updatedAt
+  store     Store                 @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  author    User                  @relation("AnnouncementAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+  comments  AnnouncementComment[]
+
+  @@index([storeId, createdAt])
+}
+
+model AnnouncementComment {
+  id             String       @id @default(cuid())
+  announcementId String
+  userId         String
+  body           String
+  createdAt      DateTime     @default(now())
+  announcement   Announcement @relation(fields: [announcementId], references: [id], onDelete: Cascade)
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([announcementId, createdAt])
+}
+
+model StoreSetting {
+  id                    String    @id @default(cuid())
+  storeId               String    @unique
+  trainerCanViewAll     Boolean   @default(true)
+  darkModeEnabled       Boolean   @default(false)
+  trainerInviteCode     String?
+  trainerInviteExpiresAt DateTime?
+  store                 Store     @relation(fields: [storeId], references: [id], onDelete: Cascade)
+}
+
+model Position {
+  id         String          @id @default(cuid())
+  storeId    String
+  name       String
+  hidden     Boolean         @default(false)
+  createdAt  DateTime        @default(now())
+  store      Store           @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  items      ChecklistItem[]
+  trainees   TraineePosition[]
+
+  @@unique([storeId, name])
+}
+
+model ChecklistItem {
+  id          String             @id @default(cuid())
+  positionId  String
+  text        String
+  description String?
+  order       Int                @default(0)
+  createdAt   DateTime           @default(now())
+  position    Position           @relation(fields: [positionId], references: [id], onDelete: Cascade)
+  progress    TrainingProgress[]
+}
+
+model Trainee {
+  id         String             @id @default(cuid())
+  storeId    String
+  name       String
+  startDate  DateTime
+  createdAt  DateTime           @default(now())
+  store      Store              @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  positions  TraineePosition[]
+  progress   TrainingProgress[]
+
+  @@index([storeId, name])
+}
+
+model TraineePosition {
+  traineeId   String
+  positionId  String
+  assignedAt  DateTime @default(now())
+  trainee     Trainee  @relation(fields: [traineeId], references: [id], onDelete: Cascade)
+  position    Position @relation(fields: [positionId], references: [id], onDelete: Cascade)
+
+  @@id([traineeId, positionId])
+}
+
+model TrainingProgress {
+  id              String        @id @default(cuid())
+  traineeId       String
+  checklistItemId String
+  completed       Boolean       @default(false)
+  trainerName     String?
+  notes           String?
+  completedAt     DateTime?
+  completedById   String?
+  updatedAt       DateTime      @updatedAt
+  trainee         Trainee       @relation(fields: [traineeId], references: [id], onDelete: Cascade)
+  checklistItem   ChecklistItem @relation(fields: [checklistItemId], references: [id], onDelete: Cascade)
+  completedBy     User?         @relation(fields: [completedById], references: [id], onDelete: SetNull)
+
+  @@unique([traineeId, checklistItemId])
+  @@index([traineeId, completed])
+}
+
+model ActivityLog {
+  id        String   @id @default(cuid())
+  storeId   String
+  userId    String?
+  message   String
+  metadata  Json?
+  createdAt DateTime @default(now())
+  store     Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([storeId, createdAt])
+}
