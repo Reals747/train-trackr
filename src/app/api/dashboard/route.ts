@@ -70,10 +70,22 @@ export async function GET() {
     const storePositionCount = visibleForProgress.length;
     const positionsFullyComplete = visibleForProgress.filter((d) => d.status === "complete").length;
     const remainingPositions = storePositionCount - positionsFullyComplete;
+
+    // Percentage is the average of each position's checklist completion ratio,
+    // weighting every position equally regardless of how many items it has.
+    // Positions with no checklist items are skipped so they don't skew the average.
+    const positionsWithItems = visibleForProgress.filter((d) => d.totalItems > 0);
     const percentage =
-      storePositionCount === 0
+      positionsWithItems.length === 0
         ? 0
-        : Math.round((positionsFullyComplete / storePositionCount) * 100);
+        : Math.round(
+            (positionsWithItems.reduce(
+              (sum, d) => sum + d.completedItems / d.totalItems,
+              0,
+            ) /
+              positionsWithItems.length) *
+              100,
+          );
 
     return {
       id: trainee.id,

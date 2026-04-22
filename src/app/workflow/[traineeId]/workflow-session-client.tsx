@@ -87,6 +87,7 @@ export function WorkflowSessionClient({
   const [selectedPositionId, setSelectedPositionId] = useState(positionId);
   const [progressItems, setProgressItems] = useState<ProgressItem[]>([]);
   const [progressLoading, setProgressLoading] = useState(false);
+  const [pendingSaves, setPendingSaves] = useState(0);
   const [systemPrefersDark, setSystemPrefersDark] = useState(() =>
     typeof window !== "undefined" ? window.matchMedia("(prefers-color-scheme: dark)").matches : false,
   );
@@ -197,6 +198,56 @@ export function WorkflowSessionClient({
     void refreshProgress();
   }, [refreshProgress]);
 
+  /**
+   * Optimistically toggle a checklist item's completion state.
+   *
+   * The local state is updated immediately so the UI feels instant; the server
+   * write and dashboard refresh happen in the background. On failure we revert
+   * the optimistic change and surface an error. This replaces the previous
+   * flow of awaiting POST + GET /api/progress + GET /api/dashboard on every
+   * click, which added a visible ~1s delay on each tap.
+   */
+  const setItemCompleted = useCallback(
+    (itemId: string, completed: boolean) => {
+      let previous: ProgressItem[] | null = null;
+      setProgressItems((items) => {
+        previous = items;
+        return items.map((it) =>
+          it.id === itemId
+            ? {
+                ...it,
+                completed,
+                trainerName: completed ? user?.name ?? it.trainerName : null,
+                completedAt: completed ? new Date().toISOString() : null,
+              }
+            : it,
+        );
+      });
+
+      setPendingSaves((n) => n + 1);
+      void (async () => {
+        try {
+          await clientApi("/api/progress", {
+            method: "POST",
+            body: JSON.stringify({ traineeId, checklistItemId: itemId, completed }),
+          });
+          // Refresh dashboard counters in the background; don't block the UI.
+          void refreshDashboardRow();
+        } catch (err) {
+          if (previous) setProgressItems(previous);
+          setLoadError(
+            err instanceof Error ? err.message : "Could not save progress. Try again.",
+          );
+          // Re-sync from the server to make sure we reflect the real state.
+          void refreshProgress();
+        } finally {
+          setPendingSaves((n) => Math.max(0, n - 1));
+        }
+      })();
+    },
+    [traineeId, user, refreshDashboardRow, refreshProgress],
+  );
+
   useEffect(() => {
     if (positions.length === 0 || !selectedPositionId) return;
     const exists = positions.some((p) => p.id === selectedPositionId);
@@ -231,7 +282,7 @@ export function WorkflowSessionClient({
           <h1 className="text-2xl font-bold">{row?.name ?? "Trainee"}</h1>
           {row && (
             <p className="mt-1 text-sm opacity-80">
-              {row.percentage}% complete · Done {row.positionsFullyComplete}/{row.storePositionCount} positions ·
+              {row.percentage}% complete · Completed {row.positionsFullyComplete}/{row.storePositionCount} positions ·
               Remaining {row.remainingPositions}
             </p>
           )}
@@ -274,44 +325,80 @@ export function WorkflowSessionClient({
         {selectedPositionId && !progressLoading && progressItems.length === 0 && (
           <p className="text-sm opacity-70">No checklist items for this position.</p>
         )}
+        {pendingSaves > 0 && progressItems.length > 0 && (
+          <p
+            className="mb-2 text-xs opacity-70"
+            role="status"
+            aria-live="polite"
+          >
+            Saving…
+          </p>
+        )}
         <div className="space-y-2">
-          {progressItems.map((item) => (
-            <label
-              key={item.id}
-              className={`flex items-start gap-[0.5em] text-base leading-normal rounded-lg border border-slate-200 p-3 dark:border-slate-600 ${canTrain ? "cursor-pointer" : "cursor-default opacity-90"}`}
-            >
-              <input
-                type="checkbox"
-                checked={item.completed}
-                disabled={!canTrain}
-                className="sr-only"
-                onChange={async (e) => {
-                  await clientApi("/api/progress", {
-                    method: "POST",
-                    body: JSON.stringify({
-                      traineeId,
-                      checklistItemId: item.id,
-                      completed: e.target.checked,
-                    }),
-                  });
-                  await refreshProgress();
-                  await refreshDashboardRow();
-                }}
-              />
-              <span className="flex size-[2lh] shrink-0 items-center justify-center text-slate-600 dark:text-slate-400">
-                <ChecklistCheckboxIcon completed={item.completed} className="size-full" />
-              </span>
-              <span className="flex-1">
-                <strong>{item.text}</strong>
-                {item.description && <p className="text-sm opacity-70">{item.description}</p>}
-                {item.completedAt && (
-                  <p className="text-xs opacity-70">
-                    {item.trainerName} • {formatDateTime(item.completedAt)}
-                  </p>
+          {progressItems.map((item) => {
+            return (
+              <div
+                key={item.id}
+                className="flex items-start gap-[0.5em] text-base leading-normal rounded-lg border border-slate-200 p-3 dark:border-slate-600"
+              >
+                <button
+                  type="button"
+                  disabled={!canTrain || item.completed}
+                  aria-pressed={item.completed}
+                  aria-label={item.completed ? `${item.text} completed` : `Mark ${item.text} complete`}
+                  onClick={() => {
+                    if (item.completed) return;
+                    setItemCompleted(item.id, true);
+                  }}
+                  className={`flex flex-1 items-start gap-[0.5em] text-left ${
+                    canTrain && !item.completed
+                      ? "cursor-pointer"
+                      : "cursor-default"
+                  } ${!canTrain ? "opacity-90" : ""}`}
+                >
+                  <span className="flex size-[2lh] shrink-0 items-center justify-center text-slate-600 dark:text-slate-400">
+                    <ChecklistCheckboxIcon completed={item.completed} className="size-full" />
+                  </span>
+                  <span className="flex-1">
+                    <strong>{item.text}</strong>
+                    {item.description && <p className="text-sm opacity-70">{item.description}</p>}
+                    {item.completedAt && (
+                      <p className="text-xs opacity-70">
+                        {item.trainerName} • {formatDateTime(item.completedAt)}
+                      </p>
+                    )}
+                  </span>
+                </button>
+                {item.completed && canTrain && (
+                  <button
+                    type="button"
+                    aria-label={`Clear completion for ${item.text}`}
+                    title="Clear completion"
+                    onClick={() => {
+                      setItemCompleted(item.id, false);
+                    }}
+                    className="shrink-0 rounded-md p-1.5 text-slate-500 hover:bg-slate-100 hover:text-rose-600 focus-visible:outline focus-visible:ring-2 focus-visible:ring-slate-400 dark:text-slate-400 dark:hover:bg-slate-700 dark:hover:text-rose-400"
+                  >
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      strokeWidth={1.5}
+                      stroke="currentColor"
+                      className="size-5"
+                      aria-hidden
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0"
+                      />
+                    </svg>
+                  </button>
                 )}
-              </span>
-            </label>
-          ))}
+              </div>
+            );
+          })}
         </div>
       </section>
     </main>

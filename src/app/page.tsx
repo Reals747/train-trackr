@@ -373,7 +373,7 @@ function TraineeDashboardModal({
               {row.name}
             </h2>
             <p className="mt-1 text-sm opacity-80">
-              {row.percentage}% complete · Done {row.positionsFullyComplete}/{row.storePositionCount}{" "}
+              {row.percentage}% complete · Completed {row.positionsFullyComplete}/{row.storePositionCount}{" "}
               positions · Remaining {row.remainingPositions}
             </p>
           </div>
@@ -772,7 +772,7 @@ export default function Home() {
                     <span className="shrink-0 text-sm font-semibold">{row.percentage}%</span>
                   </div>
                   <p className="text-sm">
-                    Done {row.positionsFullyComplete}/{row.storePositionCount} Remaining{" "}
+                    Completed {row.positionsFullyComplete}/{row.storePositionCount} Remaining{" "}
                     {row.remainingPositions}
                   </p>
                 </button>
@@ -2702,7 +2702,7 @@ function SettingsPanel({
                           </span>
                         </div>
                         <p className="mt-0.5 text-xs opacity-70">
-                          Done {row.positionsFullyComplete}/{row.storePositionCount} ·
+                          Completed {row.positionsFullyComplete}/{row.storePositionCount} ·
                           Remaining {row.remainingPositions}
                         </p>
                       </div>
