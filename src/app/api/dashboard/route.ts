@@ -2,13 +2,13 @@ import { requireAuth } from "@/lib/api";
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
 
-type PositionStatus = "complete" | "partial" | "none";
+type PositionStatus = "complete" | "partial" | "none" | "unavailable";
 
 function checklistStatusFromCounts(
   totalItems: number,
   completedItems: number,
 ): PositionStatus {
-  if (totalItems === 0) return "complete";
+  if (totalItems === 0) return "unavailable";
   if (completedItems === totalItems) return "complete";
   if (completedItems === 0) return "none";
   return "partial";

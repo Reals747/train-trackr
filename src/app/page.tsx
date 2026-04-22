@@ -37,8 +37,8 @@ type DashboardPositionDetail = {
   hidden: boolean;
   totalItems: number;
   completedItems: number;
-  /** Derived from checklist items only: 100% complete, 0% not started, else in progress. */
-  status: "complete" | "partial" | "none";
+  /** Derived from checklist: all done, none done, partial, or no checklist items (shown as "No items"). */
+  status: "complete" | "partial" | "none" | "unavailable";
   items: { id: string; text: string; completed: boolean }[];
 };
 
@@ -53,7 +53,13 @@ type DashboardRow = {
 };
 type ActivityLog = { id: string; message: string; actor: string; createdAt: string };
 type AuthMode = "login" | "register-admin" | "register-trainer";
-type SettingsCategory = "account" | "store" | "appearance" | "trainers" | "trainingSetup";
+type SettingsCategory =
+  | "account"
+  | "store"
+  | "appearance"
+  | "trainers"
+  | "traineeManagement"
+  | "trainingSetup";
 type AccountDetails = {
   id: string;
   name: string;
@@ -233,6 +239,27 @@ function ChecklistCheckboxIcon({ completed, className }: { completed: boolean; c
   );
 }
 
+/** Outline trashcan icon (matches stroke style of the other outline icons). */
+function TrashIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      fill="none"
+      viewBox="0 0 24 24"
+      strokeWidth={1.5}
+      stroke="currentColor"
+      className={className ?? "h-5 w-5 shrink-0"}
+      aria-hidden
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0"
+      />
+    </svg>
+  );
+}
+
 /** Horizontal ellipsis for overflow menus. */
 function EllipsisHorizontalIcon({ className }: { className?: string }) {
   return (
@@ -267,6 +294,16 @@ async function api<T>(url: string, init?: RequestInit): Promise<T> {
 }
 
 function PositionChecklistStatusTag({ status }: { status: DashboardPositionDetail["status"] }) {
+  const slateMutedBadge =
+    "shrink-0 rounded px-2 py-0.5 text-xs font-medium bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-200 max-sm:ring-1 max-sm:ring-inset max-sm:ring-slate-300/80 dark:max-sm:ring-slate-500/50";
+
+  if (status === "none" || status === "unavailable") {
+    return (
+      <span className={slateMutedBadge}>
+        {status === "unavailable" ? "No items" : "Not started"}
+      </span>
+    );
+  }
   if (status === "complete") {
     return (
       <span className="inline-flex shrink-0 items-center gap-1 rounded px-2 py-0.5 text-xs font-medium bg-emerald-100 text-emerald-900 dark:bg-emerald-900/40 dark:text-emerald-100 max-sm:ring-1 max-sm:ring-inset max-sm:ring-emerald-300/90 dark:max-sm:ring-emerald-500/50">
@@ -294,11 +331,8 @@ function PositionChecklistStatusTag({ status }: { status: DashboardPositionDetai
       </span>
     );
   }
-  return (
-    <span className="shrink-0 rounded px-2 py-0.5 text-xs font-medium bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-200 max-sm:ring-1 max-sm:ring-inset max-sm:ring-slate-300/80 dark:max-sm:ring-slate-500/50">
-      Not started
-    </span>
-  );
+  const _exhaustive: never = status;
+  return _exhaustive;
 }
 
 function TraineeDashboardModal({
@@ -309,6 +343,10 @@ function TraineeDashboardModal({
   onClose: () => void;
 }) {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const visiblePositionDetails = useMemo(
+    () => row.positionDetails.filter((p) => !p.hidden),
+    [row.positionDetails],
+  );
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -349,17 +387,20 @@ function TraineeDashboardModal({
         </div>
 
         <p className="mb-3 text-sm opacity-80">
-          All store positions are listed below. Expand a position to see each checklist item.
+          Visible store positions are listed below. Hidden positions are omitted. Expand a
+          position to see each checklist item.
         </p>
 
         <div className="space-y-2">
-          {row.positionDetails.map((pos) => {
+          {visiblePositionDetails.length === 0 ? (
+            <p className="rounded-lg border p-3 text-sm opacity-80">
+              No visible positions for this store.
+            </p>
+          ) : null}
+          {visiblePositionDetails.map((pos) => {
             const isOpen = expanded[pos.positionId];
             return (
-              <div
-                key={pos.positionId}
-                className={`rounded-lg border text-sm ${pos.hidden ? "opacity-80" : ""}`}
-              >
+              <div key={pos.positionId} className="rounded-lg border text-sm">
                 <button
                   type="button"
                   className="flex w-full flex-nowrap items-center gap-x-2 overflow-x-auto overflow-y-hidden px-3 py-2 text-left font-medium [-webkit-overflow-scrolling:touch] sm:flex-wrap sm:overflow-visible"
@@ -373,11 +414,6 @@ function TraineeDashboardModal({
                     className="size-[16px] shrink-0 opacity-60"
                   />
                   <span className="min-w-0 flex-1 truncate">{pos.name}</span>
-                  {pos.hidden && (
-                    <span className="shrink-0 rounded bg-slate-200 px-1.5 py-0.5 text-xs dark:bg-slate-600">
-                      Hidden
-                    </span>
-                  )}
                   <span className="ml-auto flex shrink-0 flex-nowrap items-center justify-end gap-1.5">
                     <span className="shrink-0 rounded border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs font-medium tabular-nums text-slate-700 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200">
                       {pos.completedItems}/{pos.totalItems}
@@ -442,6 +478,8 @@ export default function Home() {
 
   const canTrain = can(user?.role, "workflow.edit");
   const canViewActivity = can(user?.role, "activity.view");
+  /** Same gate as Settings → Trainee Management (owner/admin). */
+  const canOpenTraineeManagement = can(user?.role, "trainees.delete");
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -700,7 +738,20 @@ export default function Home() {
           <section className="rounded-xl bg-card p-4 shadow-sm">
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
               <h2 className="text-lg font-semibold">Trainee progress</h2>
-              {canTrain ? <AddTraineeModalFlow onRefresh={refreshCore} /> : null}
+              {canOpenTraineeManagement ? (
+                <button
+                  type="button"
+                  className="btn-accent rounded-lg px-4 py-2 text-sm font-medium"
+                  onClick={() => {
+                    setTab("settings");
+                    setSettingsCategory("traineeManagement");
+                  }}
+                >
+                  Manage trainees
+                </button>
+              ) : canTrain ? (
+                <AddTraineeModalFlow onRefresh={refreshCore} />
+              ) : null}
             </div>
             <input
               className="mb-3 w-full rounded-lg border p-3"
@@ -794,6 +845,7 @@ export default function Home() {
           storeDetails={storeDetails}
           teamMembers={teamMembers}
           positions={positions}
+          dashboard={dashboard}
           category={settingsCategory}
           appearance={appearance}
           appearanceReady={appearanceReady}
@@ -1698,7 +1750,11 @@ function PositionTrainingRow({
 
   return (
     <div
-      className={`rounded-lg border text-sm ${position.hidden ? "opacity-75" : ""}`}
+      className={`rounded-lg border text-sm ${
+        position.hidden
+          ? "border-slate-200/90 bg-slate-50/90 text-foreground/85 dark:border-slate-600/90 dark:bg-slate-900/55 dark:text-foreground/85"
+          : ""
+      } ${menuOpen ? "relative z-50" : ""}`}
     >
       <div className="flex items-center gap-2 px-3 py-2">
         <button
@@ -1729,7 +1785,7 @@ function PositionTrainingRow({
             <EllipsisHorizontalIcon className="h-5 w-5" />
           </button>
           {menuOpen && (
-            <div className="absolute right-0 z-20 mt-1 min-w-[11rem] rounded-lg border bg-card py-1 shadow-lg">
+            <div className="absolute right-0 z-[100] mt-1 min-w-[11rem] rounded-lg border bg-card py-1 shadow-lg">
               <button
                 type="button"
                 className="block w-full px-3 py-2 text-left text-sm hover:bg-slate-100 dark:hover:bg-slate-700"
@@ -2059,12 +2115,83 @@ function DeleteStoreConfirmModal({
   );
 }
 
+function DeleteTraineeConfirmModal({
+  traineeName,
+  busy,
+  error,
+  onClose,
+  onConfirm,
+}: {
+  traineeName: string;
+  busy: boolean;
+  error: string;
+  onClose: () => void;
+  onConfirm: () => void | Promise<void>;
+}) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !busy) onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose, busy]);
+
+  return (
+    <div
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="delete-trainee-dialog-title"
+      onMouseDown={(e) => {
+        if (busy) return;
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div
+        className="w-full max-w-md rounded-xl border bg-card p-5 shadow-xl"
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        <h3
+          id="delete-trainee-dialog-title"
+          className="mb-2 text-lg font-semibold text-rose-900 dark:text-rose-200"
+        >
+          Delete this trainee?
+        </h3>
+        <p className="mb-4 text-sm text-foreground">
+          <strong className="font-semibold">{traineeName}</strong> will be removed from your store.
+          All checklist progress for this trainee is permanently deleted and cannot be recovered.
+        </p>
+        {error && <p className="mb-3 text-sm text-rose-600">{error}</p>}
+        <div className="flex flex-wrap justify-end gap-2">
+          <button
+            type="button"
+            className="rounded-lg border px-4 py-2 text-sm font-medium"
+            disabled={busy}
+            onClick={onClose}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-medium text-white hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-40"
+            disabled={busy}
+            onClick={() => void onConfirm()}
+          >
+            {busy ? "Deleting…" : "Delete trainee"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function SettingsPanel({
   user,
   accountDetails,
   storeDetails,
   teamMembers,
   positions,
+  dashboard,
   category,
   appearance,
   appearanceReady,
@@ -2080,6 +2207,7 @@ function SettingsPanel({
   storeDetails: StoreDetails | null;
   teamMembers: TeamMember[];
   positions: Position[];
+  dashboard: DashboardRow[];
   category: SettingsCategory;
   appearance: AppearanceSettings;
   appearanceReady: boolean;
@@ -2100,6 +2228,8 @@ function SettingsPanel({
   const canDeleteStore = allow("settings.store.delete");
   const canManageTraining = allow("settings.trainingSetup");
   const canManageMembers = allow("settings.trainers");
+  const canDeleteTrainees = allow("trainees.delete");
+  const canCreateTrainees = allow("trainees.create");
 
   const [storeNameDraft, setStoreNameDraft] = useState("");
   const [settingsErr, setSettingsErr] = useState("");
@@ -2109,6 +2239,9 @@ function SettingsPanel({
   const [deleteStoreModalOpen, setDeleteStoreModalOpen] = useState(false);
   const [deleteStoreNameConfirm, setDeleteStoreNameConfirm] = useState("");
   const [deleteStoreBusy, setDeleteStoreBusy] = useState(false);
+  const [traineeActionError, setTraineeActionError] = useState("");
+  const [deletingTraineeId, setDeletingTraineeId] = useState<string | null>(null);
+  const [traineePendingDelete, setTraineePendingDelete] = useState<DashboardRow | null>(null);
 
   const categories: SettingsCategory[] = [
     "account",
@@ -2116,6 +2249,7 @@ function SettingsPanel({
     ...(canViewStore ? (["store"] as SettingsCategory[]) : []),
     ...(canManageTraining ? (["trainingSetup"] as SettingsCategory[]) : []),
     ...(canManageMembers ? (["trainers"] as SettingsCategory[]) : []),
+    ...(canDeleteTrainees ? (["traineeManagement"] as SettingsCategory[]) : []),
   ];
 
   return (
@@ -2139,6 +2273,7 @@ function SettingsPanel({
               {key === "appearance" && "Appearance"}
               {key === "trainingSetup" && "Position Setup"}
               {key === "trainers" && "User Management"}
+              {key === "traineeManagement" && "Trainee Management"}
             </button>
           ))}
         </aside>
@@ -2531,8 +2666,95 @@ function SettingsPanel({
               </div>
             </>
           )}
+
+          {category === "traineeManagement" && canDeleteTrainees && (
+            <>
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-semibold">Trainees</p>
+                  <p className="mt-1 text-xs opacity-70">
+                    Review everyone currently in training and remove trainees who should no
+                    longer appear on the dashboard. Deleting a trainee permanently removes
+                    their progress.
+                  </p>
+                </div>
+                {canCreateTrainees ? <AddTraineeModalFlow onRefresh={refreshCore} /> : null}
+              </div>
+              {traineeActionError && !traineePendingDelete && (
+                <p className="mb-2 text-sm text-rose-600">{traineeActionError}</p>
+              )}
+              <div className="space-y-3 text-sm">
+                {dashboard.length === 0 && (
+                  <p className="opacity-70">No trainees yet.</p>
+                )}
+                {dashboard.map((row) => {
+                  const busy = deletingTraineeId === row.id;
+                  return (
+                    <div
+                      key={row.id}
+                      className="flex items-center justify-between gap-3 rounded-lg border p-3"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center justify-between gap-2">
+                          <strong className="truncate">{row.name}</strong>
+                          <span className="shrink-0 text-sm font-semibold">
+                            {row.percentage}%
+                          </span>
+                        </div>
+                        <p className="mt-0.5 text-xs opacity-70">
+                          Done {row.positionsFullyComplete}/{row.storePositionCount} ·
+                          Remaining {row.remainingPositions}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        aria-label={`Delete trainee ${row.name}`}
+                        title={`Delete ${row.name}`}
+                        disabled={busy}
+                        className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-rose-600 text-white hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-60"
+                        onClick={() => {
+                          if (busy) return;
+                          setTraineeActionError("");
+                          setTraineePendingDelete(row);
+                        }}
+                      >
+                        <TrashIcon className="h-5 w-5" />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </>
+          )}
         </div>
       </div>
+      {traineePendingDelete !== null && (
+        <DeleteTraineeConfirmModal
+          traineeName={traineePendingDelete.name}
+          busy={deletingTraineeId === traineePendingDelete.id}
+          error={traineeActionError}
+          onClose={() => {
+            if (deletingTraineeId === traineePendingDelete.id) return;
+            setTraineePendingDelete(null);
+            setTraineeActionError("");
+          }}
+          onConfirm={async () => {
+            const row = traineePendingDelete;
+            if (!row || deletingTraineeId) return;
+            setTraineeActionError("");
+            setDeletingTraineeId(row.id);
+            try {
+              await api(`/api/trainees/${row.id}`, { method: "DELETE" });
+              setTraineePendingDelete(null);
+              await refreshCore();
+            } catch (err) {
+              setTraineeActionError((err as Error).message);
+            } finally {
+              setDeletingTraineeId(null);
+            }
+          }}
+        />
+      )}
     </section>
   );
 }
