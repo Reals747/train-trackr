@@ -14,6 +14,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type ReactNode,
 } from "react";
+import { useRouter } from "next/navigation";
 import { formatDateTime } from "@/lib/format-datetime";
 import { can, roleLabel, type Permission, type RoleName } from "@/lib/permissions";
 
@@ -311,14 +312,20 @@ function EllipsisHorizontalIcon({ className }: { className?: string }) {
   );
 }
 
+type ApiErrorBody = { error?: string; code?: string; storeName?: string };
+type ApiError = Error & { code?: string; storeName?: string };
+
 async function api<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, {
     ...init,
     headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
   });
   if (!response.ok) {
-    const body = (await response.json().catch(() => ({}))) as { error?: string };
-    throw new Error(body.error || "Request failed");
+    const body = (await response.json().catch(() => ({}))) as ApiErrorBody;
+    const e = new Error(body.error || "Request failed") as ApiError;
+    e.code = body.code;
+    e.storeName = body.storeName;
+    throw e;
   }
   return response.json() as Promise<T>;
 }
@@ -483,6 +490,7 @@ function TraineeDashboardModal({
 }
 
 export default function Home() {
+  const router = useRouter();
   const [user, setUser] = useState<AppUser | null>(null);
   const [error, setError] = useState<string>("");
   const [tab, setTab] = useState("dashboard");
@@ -507,7 +515,6 @@ export default function Home() {
       : false,
   );
 
-  const canTrain = can(user?.role, "workflow.edit");
   const canViewActivity = can(user?.role, "activity.view");
   /** Same gate as Settings → Trainee Management (owner/admin). */
   const canOpenTraineeManagement = can(user?.role, "trainees.delete");
@@ -772,7 +779,7 @@ export default function Home() {
           <section className="rounded-xl bg-card p-4 shadow-sm">
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
               <h2 className="text-lg font-semibold">Trainee progress</h2>
-              {canOpenTraineeManagement ? (
+              {canOpenTraineeManagement && (
                 <button
                   type="button"
                   className="btn-accent rounded-lg px-4 py-2 text-sm font-medium"
@@ -783,9 +790,7 @@ export default function Home() {
                 >
                   Manage trainees
                 </button>
-              ) : canTrain ? (
-                <AddTraineeModalFlow onRefresh={refreshCore} />
-              ) : null}
+              )}
             </div>
             <input
               className="mb-3 w-full rounded-lg border p-3"
@@ -838,7 +843,7 @@ export default function Home() {
               disabled={!selectedTraineeId}
               onClick={() => {
                 if (!selectedTraineeId) return;
-                window.open(`/workflow/${selectedTraineeId}`, "_blank", "noopener,noreferrer");
+                router.push(`/workflow/${selectedTraineeId}`);
               }}
             >
               Load Checklist
@@ -1030,13 +1035,33 @@ function AuthScreen({
   const [storeCodeSlots, setStoreCodeSlots] = useState<string[]>(() =>
     Array.from({ length: 8 }, () => ""),
   );
+  const [createTrainerDialog, setCreateTrainerDialog] = useState<{
+    storeName: string;
+    storeCode: string;
+    username: string;
+  } | null>(null);
+  const [createTrainerAccountError, setCreateTrainerAccountError] = useState("");
 
   useEffect(() => {
+    setCreateTrainerDialog(null);
+    setCreateTrainerAccountError("");
     /** Reset the 8-digit entry whenever we enter a mode that uses it. */
     if (mode === "register-trainer" || (mode === "login" && loginAs === "trainer")) {
       setStoreCodeSlots(Array.from({ length: 8 }, () => ""));
     }
   }, [mode, loginAs]);
+
+  useEffect(() => {
+    if (!createTrainerDialog) return;
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setCreateTrainerDialog(null);
+        setCreateTrainerAccountError("");
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [createTrainerDialog]);
 
   const needsStoreCode =
     mode === "register-trainer" || (mode === "login" && loginAs === "trainer");
@@ -1097,7 +1122,23 @@ function AuthScreen({
       });
       onLoggedIn(res.user);
     } catch (err) {
-      onError((err as Error).message);
+      const apiErr = err as ApiError;
+      if (
+        mode === "login" &&
+        loginAs === "trainer" &&
+        apiErr.code === "unknown_trainer_username" &&
+        apiErr.storeName
+      ) {
+        onError("");
+        setCreateTrainerAccountError("");
+        setCreateTrainerDialog({
+          storeName: apiErr.storeName,
+          storeCode,
+          username: String(formData.get("username") ?? "").trim(),
+        });
+        return;
+      }
+      onError(apiErr.message);
     }
   }
 
@@ -1109,6 +1150,72 @@ function AuthScreen({
 
   return (
     <main className="mx-auto flex min-h-[100dvh] w-full max-w-md flex-col justify-center px-4 py-8">
+      {createTrainerDialog && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="create-trainer-from-login-title"
+          onMouseDown={(ev) => {
+            if (ev.target === ev.currentTarget) {
+              setCreateTrainerDialog(null);
+              setCreateTrainerAccountError("");
+            }
+          }}
+        >
+          <div
+            className="w-full max-w-md rounded-xl border bg-card p-5 shadow-xl"
+            onMouseDown={(ev) => ev.stopPropagation()}
+          >
+            <h3 id="create-trainer-from-login-title" className="text-lg font-semibold">
+              Create trainer account?
+            </h3>
+            <p className="mt-2 text-sm opacity-80">
+              There is no account for <strong className="text-foreground">{createTrainerDialog.username}</strong>{" "}
+              at <strong className="text-foreground">{createTrainerDialog.storeName}</strong> yet. Create a
+              new trainer account with this username and join this store?
+            </p>
+            {createTrainerAccountError && (
+              <p className="mt-2 text-sm text-rose-600">{createTrainerAccountError}</p>
+            )}
+            <div className="mt-4 flex flex-wrap justify-end gap-2">
+              <button
+                type="button"
+                className="rounded-lg border px-4 py-2 text-sm font-medium"
+                onClick={() => {
+                  setCreateTrainerDialog(null);
+                  setCreateTrainerAccountError("");
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn-accent rounded-lg px-4 py-2 text-sm font-medium"
+                onClick={async () => {
+                  if (!createTrainerDialog) return;
+                  setCreateTrainerAccountError("");
+                  try {
+                    const res = await api<{ user: AppUser }>("/api/auth/register-trainer", {
+                      method: "POST",
+                      body: JSON.stringify({
+                        storeCode: createTrainerDialog.storeCode,
+                        username: createTrainerDialog.username,
+                      }),
+                    });
+                    setCreateTrainerDialog(null);
+                    onLoggedIn(res.user);
+                  } catch (caught) {
+                    setCreateTrainerAccountError((caught as Error).message);
+                  }
+                }}
+              >
+                Create account
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       <form
         onSubmit={submit}
         className="relative z-10 w-full rounded-xl bg-card p-5 shadow-sm"
@@ -1236,7 +1343,7 @@ function AuthScreen({
               className="min-h-12 w-full touch-manipulation rounded-lg px-2 py-3 text-base underline underline-offset-2"
               onClick={() => setMode("register-trainer")}
             >
-              Sign up as trainer with store code
+              Create new account
             </button>
           )}
         </div>

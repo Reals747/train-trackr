@@ -3,6 +3,7 @@
 import { clientApi } from "@/lib/client-api";
 import { formatDateTime } from "@/lib/format-datetime";
 import { can, type RoleName } from "@/lib/permissions";
+import LoadingScreen from "@/components/LoadingScreen";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
@@ -256,11 +257,7 @@ export function WorkflowSessionClient({
   }, [positions, selectedPositionId]);
 
   if (loading) {
-    return (
-      <main className="mx-auto flex min-h-screen w-full max-w-5xl flex-col gap-4 p-3 sm:p-6">
-        <p className="text-sm opacity-70">Loading…</p>
-      </main>
-    );
+    return <LoadingScreen />;
   }
 
   if (!user && loadError) {

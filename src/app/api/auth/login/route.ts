@@ -70,7 +70,17 @@ async function signInTrainer(storeCode: string, username: string) {
     where: { storeId_username: { storeId: store.id, username } },
     include: { store: true },
   });
-  if (!trainer || trainer.role !== Role.TRAINER) {
+  if (!trainer) {
+    return NextResponse.json(
+      {
+        error: "No trainer account for this username in this store",
+        code: "unknown_trainer_username",
+        storeName: store.name,
+      },
+      { status: 401 },
+    );
+  }
+  if (trainer.role !== Role.TRAINER) {
     return NextResponse.json(
       { error: "No trainer with that username in this store" },
       { status: 401 },
