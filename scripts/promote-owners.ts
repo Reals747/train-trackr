@@ -10,16 +10,16 @@ async function main() {
   for (const store of stores) {
     const owner = await prisma.user.findFirst({
       where: { storeId: store.id, role: Role.OWNER },
-      select: { id: true, email: true },
+      select: { id: true, username: true },
     });
     if (owner) {
-      console.log(`[skip] ${store.name} already has owner ${owner.email}`);
+      console.log(`[skip] ${store.name} already has owner ${owner.username}`);
       continue;
     }
     const oldestAdmin = await prisma.user.findFirst({
       where: { storeId: store.id, role: Role.ADMIN },
       orderBy: { createdAt: "asc" },
-      select: { id: true, email: true, createdAt: true },
+      select: { id: true, username: true, createdAt: true },
     });
     if (!oldestAdmin) {
       console.log(`[warn] ${store.name} has no admins; leaving untouched`);
@@ -30,7 +30,7 @@ async function main() {
       data: { role: Role.OWNER },
     });
     console.log(
-      `[promoted] ${store.name}: ${oldestAdmin.email} (created ${oldestAdmin.createdAt.toISOString()}) -> OWNER`,
+      `[promoted] ${store.name}: ${oldestAdmin.username} (created ${oldestAdmin.createdAt.toISOString()}) -> OWNER`,
     );
   }
 }

@@ -1,6 +1,7 @@
 import { Role } from "@prisma/client";
 import { hashPassword } from "../src/lib/auth";
 import { prisma } from "../src/lib/prisma";
+import { generateUniqueStoreCode } from "../src/lib/store-code";
 
 async function main() {
   await prisma.trainingProgress.deleteMany();
@@ -13,27 +14,45 @@ async function main() {
   await prisma.activityLog.deleteMany();
   await prisma.store.deleteMany();
 
+  const storeCode = await generateUniqueStoreCode();
   const store = await prisma.store.create({
     data: {
       name: "Demo Chick-fil-A Style Store",
+      storeCode,
       settings: { create: { trainerCanViewAll: true, darkModeEnabled: false } },
     },
   });
 
-  const [adminPass, trainerPass, viewerPass] = await Promise.all([
+  const [adminPass, viewerPass] = await Promise.all([
     hashPassword("Admin1234!"),
-    hashPassword("Trainer1234!"),
     hashPassword("Viewer1234!"),
   ]);
 
   const admin = await prisma.user.create({
-    data: { name: "Operator Admin", email: "admin@store.com", passwordHash: adminPass, role: Role.OWNER, storeId: store.id },
+    data: {
+      name: "Operator Admin",
+      username: "admin",
+      passwordHash: adminPass,
+      role: Role.OWNER,
+      storeId: store.id,
+    },
   });
   await prisma.user.create({
-    data: { name: "Shift Trainer", email: "trainer@store.com", passwordHash: trainerPass, role: Role.TRAINER, storeId: store.id },
+    data: {
+      name: "Shift Trainer",
+      username: "trainer",
+      role: Role.TRAINER,
+      storeId: store.id,
+    },
   });
   await prisma.user.create({
-    data: { name: "Viewer User", email: "viewer@store.com", passwordHash: viewerPass, role: Role.VIEWER, storeId: store.id },
+    data: {
+      name: "Viewer User",
+      username: "viewer",
+      passwordHash: viewerPass,
+      role: Role.VIEWER,
+      storeId: store.id,
+    },
   });
 
   const windowPos = await prisma.position.create({ data: { storeId: store.id, name: "Window" } });
@@ -76,6 +95,8 @@ async function main() {
       message: "Seeded demo data for Training Tracker",
     },
   });
+
+  console.log(`Seeded store "${store.name}" with storeCode=${store.storeCode}`);
 }
 
 main()

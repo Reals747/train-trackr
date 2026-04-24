@@ -15,7 +15,7 @@ export async function GET() {
     select: {
       id: true,
       name: true,
-      email: true,
+      username: true,
       role: true,
       createdAt: true,
       trainerInviteCodeUsed: true,
@@ -27,7 +27,7 @@ export async function GET() {
     members: members.map((m) => ({
       id: m.id,
       name: m.name,
-      email: m.email,
+      username: m.username,
       role: m.role,
       createdAt: m.createdAt.toISOString(),
       trainerInviteCodeUsed: m.trainerInviteCodeUsed,

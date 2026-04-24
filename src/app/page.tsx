@@ -18,7 +18,14 @@ import { formatDateTime } from "@/lib/format-datetime";
 import { can, roleLabel, type Permission, type RoleName } from "@/lib/permissions";
 
 type Role = RoleName;
-type AppUser = { id: string; name: string; email: string; role: Role; storeName: string };
+type AppUser = {
+  id: string;
+  name: string;
+  username: string;
+  role: Role;
+  storeName: string;
+  storeCode: string;
+};
 type Position = {
   id: string;
   name: string;
@@ -63,22 +70,24 @@ type SettingsCategory =
 type AccountDetails = {
   id: string;
   name: string;
-  email: string;
+  username: string;
   role: Role;
   createdAt: string;
   storeName: string;
   storeId: string;
+  storeCode: string;
 };
 type StoreDetails = {
   id: string;
   name: string;
+  storeCode: string;
   createdAt: string;
   _count: { users: number; positions: number; trainees: number };
 };
 type TeamMember = {
   id: string;
   name: string;
-  email: string;
+  username: string;
   role: Role;
   createdAt: string;
   trainerInviteCodeUsed: string | null;
@@ -235,6 +244,27 @@ function ChecklistCheckboxIcon({ completed, className }: { completed: boolean; c
       {completed && (
         <path strokeLinecap="round" strokeLinejoin="round" d="m9 12.75 2.25 2.25L15 9.75" />
       )}
+    </svg>
+  );
+}
+
+/** Outline pencil / edit icon (matches stroke style of the other outline icons). */
+function PencilIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      fill="none"
+      viewBox="0 0 24 24"
+      strokeWidth={1.5}
+      stroke="currentColor"
+      className={className ?? "h-5 w-5 shrink-0"}
+      aria-hidden
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.832 19.82a4.5 4.5 0 01-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487zm0 0L19.5 7.125"
+      />
     </svg>
   );
 }
@@ -467,6 +497,7 @@ export default function Home() {
   const [accountDetails, setAccountDetails] = useState<AccountDetails | null>(null);
   const [storeDetails, setStoreDetails] = useState<StoreDetails | null>(null);
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- AnnouncementsSection is temporarily hidden; keep state/fetcher so we can re-enable quickly.
   const [announcements, setAnnouncements] = useState<AnnouncementRow[]>([]);
   const [appearance, setAppearance] = useState<AppearanceSettings>(DEFAULT_APPEARANCE);
   const [appearanceReady, setAppearanceReady] = useState(false);
@@ -728,6 +759,8 @@ export default function Home() {
 
       {tab === "dashboard" && (
         <>
+          {/* Announcements section temporarily hidden — uncomment the <AnnouncementsSection /> block
+              below to restore it. The API routes, state, and component remain intact so no progress is lost.
           <AnnouncementsSection
             user={user}
             accountDetails={accountDetails}
@@ -735,6 +768,7 @@ export default function Home() {
             canComment={canTrain}
             onRefresh={refreshCore}
           />
+          */}
           <section className="rounded-xl bg-card p-4 shadow-sm">
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
               <h2 className="text-lg font-semibold">Trainee progress</h2>
@@ -878,14 +912,21 @@ export default function Home() {
   );
 }
 
-/** Six-cell invite code entry; digits stored in `User`-facing order left-to-right. */
-function InviteCodeSixDigit({
+/** Variable-length digit entry (used for store join codes); digits stored left-to-right. */
+function DigitCodeInput({
   slots,
   onSlotsChange,
+  label,
+  helper,
+  idPrefix,
 }: {
   slots: string[];
   onSlotsChange: (next: string[]) => void;
+  label: string;
+  helper: string;
+  idPrefix: string;
 }) {
+  const length = slots.length;
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
 
   const setSlots = onSlotsChange;
@@ -901,7 +942,7 @@ function InviteCodeSixDigit({
     if (digit) {
       next[i] = digit;
       setSlots(next);
-      if (i < 5) focusSlot(i + 1);
+      if (i < length - 1) focusSlot(i + 1);
     } else {
       next[i] = "";
       setSlots(next);
@@ -919,17 +960,17 @@ function InviteCodeSixDigit({
   }
 
   function handlePaste(i: number, e: ReactClipboardEvent<HTMLInputElement>) {
-    const text = e.clipboardData.getData("text").replace(/\D/g, "").slice(0, 6);
-    if (text.length === 6) {
+    const text = e.clipboardData.getData("text").replace(/\D/g, "").slice(0, length);
+    if (text.length === length) {
       e.preventDefault();
       setSlots(text.split(""));
-      focusSlot(5);
+      focusSlot(length - 1);
     } else if (text.length > 0 && i === 0) {
       e.preventDefault();
       const next = [...slots];
-      for (let j = 0; j < 6; j++) next[j] = text[j] ?? "";
+      for (let j = 0; j < length; j++) next[j] = text[j] ?? "";
       setSlots(next);
-      const last = Math.min(text.length - 1, 5);
+      const last = Math.min(text.length - 1, length - 1);
       focusSlot(last);
     }
   }
@@ -937,29 +978,29 @@ function InviteCodeSixDigit({
   return (
     <div className="mb-6 rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 p-4 dark:border-slate-500 dark:bg-slate-900/40">
       <p className="mb-3 text-center text-sm font-semibold tracking-wide text-foreground">
-        Invite code
+        {label}
       </p>
-      <div className="flex justify-center gap-2 sm:gap-3">
+      <div className="flex justify-center gap-1.5 sm:gap-2">
         {slots.map((ch, i) => (
           <div
             key={i}
-            className="relative flex-1 max-w-[4rem] rounded-lg border-2 border-slate-300 bg-card shadow-inner dark:border-slate-500 dark:bg-card"
+            className="relative flex-1 max-w-[3.25rem] rounded-lg border-2 border-slate-300 bg-card shadow-inner dark:border-slate-500 dark:bg-card"
           >
-            <label htmlFor={`invite-digit-${i}`} className="sr-only">
-              Digit {i + 1} of 6
+            <label htmlFor={`${idPrefix}-${i}`} className="sr-only">
+              Digit {i + 1} of {length}
             </label>
             <input
               ref={(el) => {
                 inputRefs.current[i] = el;
               }}
-              id={`invite-digit-${i}`}
+              id={`${idPrefix}-${i}`}
               type="text"
               inputMode="numeric"
               autoComplete={i === 0 ? "one-time-code" : "off"}
               maxLength={1}
               value={ch}
-              aria-label={`Invite code digit ${i + 1} of 6`}
-              className="min-h-[4rem] h-16 w-full rounded-[inherit] border-0 bg-transparent text-center text-4xl font-semibold tabular-nums leading-none text-foreground outline-none ring-0 transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--accent,#dc2626)] focus-visible:outline-offset-[-2px]"
+              aria-label={`${label} digit ${i + 1} of ${length}`}
+              className="min-h-[3.5rem] h-14 w-full rounded-[inherit] border-0 bg-transparent text-center text-3xl font-semibold tabular-nums leading-none text-foreground outline-none ring-0 transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--accent,#dc2626)] focus-visible:outline-offset-[-2px] sm:min-h-[4rem] sm:h-16 sm:text-4xl"
               onChange={(e) => handleDigit(i, e.target.value)}
               onKeyDown={(e) => handleKeyDown(i, e)}
               onPaste={(e) => handlePaste(i, e)}
@@ -968,10 +1009,12 @@ function InviteCodeSixDigit({
           </div>
         ))}
       </div>
-      <p className="mt-3 text-center text-xs opacity-70">Enter the 6-digit code from your manager</p>
+      <p className="mt-3 text-center text-xs opacity-70">{helper}</p>
     </div>
   );
 }
+
+type LoginAs = "owner" | "trainer";
 
 function AuthScreen({
   onLoggedIn,
@@ -983,50 +1026,70 @@ function AuthScreen({
   error: string;
 }) {
   const [mode, setMode] = useState<AuthMode>("login");
-  const [inviteSlots, setInviteSlots] = useState<string[]>(() => Array.from({ length: 6 }, () => ""));
+  const [loginAs, setLoginAs] = useState<LoginAs>("owner");
+  const [storeCodeSlots, setStoreCodeSlots] = useState<string[]>(() =>
+    Array.from({ length: 8 }, () => ""),
+  );
 
   useEffect(() => {
-    if (mode === "register-trainer") {
-      setInviteSlots(Array.from({ length: 6 }, () => ""));
+    /** Reset the 8-digit entry whenever we enter a mode that uses it. */
+    if (mode === "register-trainer" || (mode === "login" && loginAs === "trainer")) {
+      setStoreCodeSlots(Array.from({ length: 8 }, () => ""));
     }
-  }, [mode]);
+  }, [mode, loginAs]);
+
+  const needsStoreCode =
+    mode === "register-trainer" || (mode === "login" && loginAs === "trainer");
 
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    if (mode === "register-trainer") {
-      const code = inviteSlots.join("");
-      if (!/^\d{6}$/.test(code)) {
-        onError("Enter the full 6-digit invite code.");
-        return;
-      }
-    }
     const formData = new FormData(e.currentTarget);
+    const storeCode = storeCodeSlots.join("");
+    if (needsStoreCode && !/^\d{8}$/.test(storeCode)) {
+      onError("Enter the full 8-digit store code.");
+      return;
+    }
     onError("");
     try {
-      const endpoint =
-        mode === "login"
-          ? "/api/auth/login"
-          : mode === "register-admin"
-            ? "/api/auth/register"
-            : "/api/auth/register-trainer";
-      const payload = (() => {
-        if (mode === "login") {
-          return { identifier: formData.get("identifier"), password: formData.get("password") };
+      const [endpoint, payload] = (() => {
+        if (mode === "login" && loginAs === "owner") {
+          return [
+            "/api/auth/login",
+            {
+              mode: "owner",
+              username: formData.get("username"),
+              password: formData.get("password"),
+            },
+          ] as const;
+        }
+        if (mode === "login" && loginAs === "trainer") {
+          return [
+            "/api/auth/login",
+            {
+              mode: "trainer",
+              storeCode,
+              username: formData.get("username"),
+            },
+          ] as const;
         }
         if (mode === "register-admin") {
-          return {
-            storeName: formData.get("storeName"),
-            name: formData.get("name"),
-            email: formData.get("email"),
-            password: formData.get("password"),
-          };
+          return [
+            "/api/auth/register",
+            {
+              storeName: formData.get("storeName"),
+              name: formData.get("name"),
+              username: formData.get("username"),
+              password: formData.get("password"),
+            },
+          ] as const;
         }
-        return {
-          inviteCode: formData.get("inviteCode"),
-          name: formData.get("name"),
-          username: formData.get("username"),
-          password: formData.get("password"),
-        };
+        return [
+          "/api/auth/register-trainer",
+          {
+            storeCode,
+            username: formData.get("username"),
+          },
+        ] as const;
       })();
       const res = await api<{ user: AppUser }>(endpoint, {
         method: "POST",
@@ -1038,6 +1101,12 @@ function AuthScreen({
     }
   }
 
+  const submitLabel = (() => {
+    if (mode === "register-admin") return "Create store";
+    if (mode === "register-trainer") return "Create trainer account";
+    return "Sign in";
+  })();
+
   return (
     <main className="mx-auto flex min-h-[100dvh] w-full max-w-md flex-col justify-center px-4 py-8">
       <form
@@ -1047,81 +1116,101 @@ function AuthScreen({
       >
         <h1 className="text-2xl font-bold">Training Tracker</h1>
         <p className="mb-4 text-sm opacity-75">Mobile-first training for fast shifts.</p>
-        {mode === "register-trainer" && (
+
+        {mode === "login" && (
+          <div
+            role="tablist"
+            aria-label="Sign in as"
+            className="mb-4 flex gap-2 rounded-lg border bg-slate-100 p-1 dark:bg-slate-800"
+          >
+            {(
+              [
+                ["owner", "Owner / Admin"],
+                ["trainer", "Trainer"],
+              ] as const
+            ).map(([key, label]) => (
+              <button
+                key={key}
+                type="button"
+                role="tab"
+                aria-selected={loginAs === key}
+                onClick={() => setLoginAs(key)}
+                className={`flex-1 rounded-md px-3 py-2 text-sm font-medium ${
+                  loginAs === key
+                    ? "btn-accent"
+                    : "bg-transparent text-foreground/80 hover:text-foreground"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {needsStoreCode && (
+          <DigitCodeInput
+            slots={storeCodeSlots}
+            onSlotsChange={setStoreCodeSlots}
+            label="Store code"
+            helper="Enter the 8-digit store code from your manager"
+            idPrefix="store-code-digit"
+          />
+        )}
+
+        {mode === "register-admin" && (
           <>
-            <InviteCodeSixDigit slots={inviteSlots} onSlotsChange={setInviteSlots} />
-            <input type="hidden" name="inviteCode" value={inviteSlots.join("")} readOnly />
+            <input
+              name="storeName"
+              placeholder="Store name"
+              className="mb-2 w-full rounded-lg border p-3 text-base"
+              required
+              autoComplete="organization"
+            />
+            <input
+              name="name"
+              placeholder="Full name"
+              className="mb-2 w-full rounded-lg border p-3 text-base"
+              required
+              autoComplete="name"
+            />
           </>
         )}
-        {mode === "register-admin" && (
-          <input
-            name="storeName"
-            placeholder="Store name"
-            className="mb-2 w-full rounded-lg border p-3 text-base"
-            required
-            autoComplete="organization"
-          />
-        )}
-        {mode !== "login" && (
-          <input
-            name="name"
-            placeholder="Full name"
-            className="mb-2 w-full rounded-lg border p-3 text-base"
-            required
-            autoComplete="name"
-          />
-        )}
-        {mode === "login" && (
-          <input
-            name="identifier"
-            type="text"
-            placeholder="Email or username"
-            className="mb-2 w-full rounded-lg border p-3 text-base"
-            required
-            autoComplete="username"
-          />
-        )}
-        {mode === "register-admin" && (
-          <input
-            name="email"
-            type="email"
-            placeholder="Email address"
-            className="mb-2 w-full rounded-lg border p-3 text-base"
-            required
-            autoComplete="email"
-          />
-        )}
-        {mode === "register-trainer" && (
-          <input
-            name="username"
-            type="text"
-            placeholder="Username"
-            className="mb-2 w-full rounded-lg border p-3 text-base"
-            required
-            minLength={2}
-            maxLength={64}
-            pattern="[a-zA-Z0-9._-]+"
-            title="Letters, numbers, dots, dashes, and underscores only"
-            autoComplete="username"
-          />
-        )}
+
         <input
-          name="password"
-          type="password"
-          placeholder="Password (min 8)"
+          name="username"
+          type="text"
+          placeholder="Username"
           className="mb-2 w-full rounded-lg border p-3 text-base"
           required
-          minLength={8}
-          autoComplete={mode === "login" ? "current-password" : "new-password"}
-          enterKeyHint="go"
+          minLength={2}
+          maxLength={64}
+          pattern="[a-zA-Z0-9._-]+"
+          title="Letters, numbers, dots, dashes, and underscores only"
+          autoComplete="username"
         />
+
+        {(mode === "register-admin" || (mode === "login" && loginAs === "owner")) && (
+          <input
+            name="password"
+            type="password"
+            placeholder={mode === "login" ? "Password" : "Password (min 8)"}
+            className="mb-2 w-full rounded-lg border p-3 text-base"
+            required
+            minLength={mode === "login" ? 1 : 8}
+            autoComplete={mode === "login" ? "current-password" : "new-password"}
+            enterKeyHint="go"
+          />
+        )}
+
         {error && <p className="mb-2 text-sm text-rose-600">{error}</p>}
+
         <button
           type="submit"
           className="btn-accent min-h-12 w-full touch-manipulation rounded-lg p-3 text-base font-semibold"
         >
-          {mode === "login" ? "Sign in" : mode === "register-admin" ? "Create store" : "Create trainer account"}
+          {submitLabel}
         </button>
+
         <div className="mt-3 space-y-2 text-center text-sm">
           {mode !== "login" && (
             <button
@@ -1147,7 +1236,7 @@ function AuthScreen({
               className="min-h-12 w-full touch-manipulation rounded-lg px-2 py-3 text-base underline underline-offset-2"
               onClick={() => setMode("register-trainer")}
             >
-              Sign up with invite code
+              Sign up as trainer with store code
             </button>
           )}
         </div>
@@ -1226,6 +1315,7 @@ function AnnouncementCommentsScrollArea({
   );
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars -- AnnouncementsSection is temporarily hidden; kept here so the feature can be re-enabled quickly.
 function AnnouncementsSection({
   user,
   accountDetails,
@@ -1922,47 +2012,13 @@ function PositionTrainingRow({
 }
 
 function TrainerInviteModal({
-  open,
+  storeCode,
   onClose,
-  onAfterChange,
 }: {
-  open: boolean;
+  storeCode: string | null;
   onClose: () => void;
-  onAfterChange: () => Promise<void>;
 }) {
-  const [inviteCode, setInviteCode] = useState<string | null>(null);
-  const [expiresAt, setExpiresAt] = useState<string | null>(null);
   const [status, setStatus] = useState("");
-
-  useEffect(() => {
-    if (!open) return;
-    api<{ inviteCode: string | null; expiresAt: string | null }>("/api/settings/invite-code")
-      .then((res) => {
-        setInviteCode(res.inviteCode);
-        setExpiresAt(res.expiresAt);
-      })
-      .catch(() => {
-        setInviteCode(null);
-        setExpiresAt(null);
-      });
-  }, [open]);
-
-  async function generateCode() {
-    setStatus("");
-    try {
-      const res = await api<{ inviteCode: string; expiresAt: string | null }>("/api/settings/invite-code", {
-        method: "POST",
-      });
-      setInviteCode(res.inviteCode);
-      setExpiresAt(res.expiresAt);
-      setStatus("New code generated. Share it with your trainer — it expires in 7 days.");
-      await onAfterChange();
-    } catch (error) {
-      setStatus((error as Error).message);
-    }
-  }
-
-  if (!open) return null;
 
   return (
     <div
@@ -1980,37 +2036,31 @@ function TrainerInviteModal({
           Invite Trainer
         </h3>
         <p className="mt-2 text-sm opacity-80">
-          Generate a one-time 6-digit code. It is removed automatically after a trainer registers with it, or after 7 days
-          if unused.
+          Share this permanent store code with anyone you want to give access. Trainers use it
+          together with a username to sign in — no password required.
         </p>
 
-        <div className="mt-4 flex flex-wrap gap-2">
-          <button type="button" className="btn-accent rounded-lg px-4 py-2" onClick={() => generateCode()}>
-            Generate code
-          </button>
-          {inviteCode && (
+        <p className="mt-4 font-mono text-3xl tracking-[0.35em]">{storeCode ?? "—"}</p>
+
+        {storeCode && (
+          <div className="mt-4 flex flex-wrap gap-2">
             <button
               type="button"
-              className="rounded-lg border px-4 py-2"
+              className="btn-accent rounded-lg px-4 py-2"
               onClick={async () => {
-                await navigator.clipboard.writeText(inviteCode);
-                setStatus("Code copied to clipboard.");
+                try {
+                  await navigator.clipboard.writeText(storeCode);
+                  setStatus("Code copied to clipboard.");
+                } catch {
+                  setStatus("Couldn't copy automatically. Select the code to copy.");
+                }
               }}
             >
               Copy code
             </button>
-          )}
-        </div>
+          </div>
+        )}
 
-        <p className="mt-4 font-mono text-2xl tracking-widest">{inviteCode ?? "—"}</p>
-        {expiresAt && inviteCode && (
-          <p className="mt-2 text-xs opacity-70">
-            Expires {formatDateTime(expiresAt)}
-          </p>
-        )}
-        {!inviteCode && (
-          <p className="mt-2 text-sm opacity-70">No active invite code. Generate one to invite a trainer.</p>
-        )}
         {status && <p className="mt-3 text-sm">{status}</p>}
 
         <button
@@ -2185,6 +2235,94 @@ function DeleteTraineeConfirmModal({
   );
 }
 
+function EditTraineeModal({
+  trainee,
+  busy,
+  error,
+  onClose,
+  onSave,
+}: {
+  trainee: DashboardRow;
+  busy: boolean;
+  error: string;
+  onClose: () => void;
+  onSave: (nextName: string) => void | Promise<void>;
+}) {
+  const [name, setName] = useState(trainee.name);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !busy) onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose, busy]);
+
+  return (
+    <div
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="edit-trainee-dialog-title"
+      onMouseDown={(e) => {
+        if (busy) return;
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div
+        className="w-full max-w-md rounded-xl border bg-card p-5 shadow-xl"
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        <h3 id="edit-trainee-dialog-title" className="mb-3 text-lg font-semibold">
+          Edit trainee name
+        </h3>
+        <form
+          className="space-y-3"
+          onSubmit={(e) => {
+            e.preventDefault();
+            const trimmed = name.trim();
+            if (trimmed.length < 2) return;
+            void onSave(trimmed);
+          }}
+        >
+          <label htmlFor="edit-trainee-name" className="sr-only">
+            Name
+          </label>
+          <input
+            id="edit-trainee-name"
+            autoFocus
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Name"
+            className="w-full rounded-lg border bg-background p-3"
+            required
+            minLength={2}
+            autoComplete="name"
+          />
+          {error && <p className="text-sm text-rose-600">{error}</p>}
+          <div className="flex flex-wrap justify-end gap-2 pt-1">
+            <button
+              type="button"
+              className="rounded-lg border px-4 py-2 text-sm font-medium"
+              disabled={busy}
+              onClick={onClose}
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="btn-accent rounded-lg px-4 py-2 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-60"
+              disabled={busy || name.trim().length < 2 || name.trim() === trainee.name}
+            >
+              {busy ? "Saving…" : "Save"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 function SettingsPanel({
   user,
   accountDetails,
@@ -2242,6 +2380,8 @@ function SettingsPanel({
   const [traineeActionError, setTraineeActionError] = useState("");
   const [deletingTraineeId, setDeletingTraineeId] = useState<string | null>(null);
   const [traineePendingDelete, setTraineePendingDelete] = useState<DashboardRow | null>(null);
+  const [traineePendingEdit, setTraineePendingEdit] = useState<DashboardRow | null>(null);
+  const [savingTraineeId, setSavingTraineeId] = useState<string | null>(null);
 
   const categories: SettingsCategory[] = [
     "account",
@@ -2282,9 +2422,15 @@ function SettingsPanel({
           {category === "account" && (
             <div className="space-y-2 text-sm">
               <p><strong>Name:</strong> {accountDetails?.name ?? user.name}</p>
-              <p><strong>Email:</strong> {accountDetails?.email ?? user.email}</p>
+              <p><strong>Username:</strong> {accountDetails?.username ?? user.username}</p>
               <p><strong>Role:</strong> {accountDetails?.role ?? user.role}</p>
               <p><strong>Store:</strong> {accountDetails?.storeName ?? user.storeName}</p>
+              <p>
+                <strong>Store Code:</strong>{" "}
+                <span className="font-mono tracking-widest">
+                  {accountDetails?.storeCode ?? user.storeCode ?? "—"}
+                </span>
+              </p>
               <p>
                 <strong>Account Created:</strong>{" "}
                 {accountDetails?.createdAt ? formatDateTime(accountDetails.createdAt) : "-"}
@@ -2298,6 +2444,12 @@ function SettingsPanel({
           {category === "store" && canViewStore && (
             <div className="space-y-3 text-sm">
               <p><strong>Store Name:</strong> {storeDetails?.name ?? "-"}</p>
+              <p>
+                <strong>Store Code:</strong>{" "}
+                <span className="font-mono tracking-widest">
+                  {storeDetails?.storeCode ?? user.storeCode ?? "—"}
+                </span>
+              </p>
               <p>
                 <strong>Created:</strong>{" "}
                 {storeDetails?.createdAt ? formatDateTime(storeDetails.createdAt) : "-"}
@@ -2539,11 +2691,12 @@ function SettingsPanel({
                   Invite Trainer
                 </button>
               </div>
-              <TrainerInviteModal
-                open={trainerInviteModalOpen}
-                onClose={() => setTrainerInviteModalOpen(false)}
-                onAfterChange={refreshCore}
-              />
+              {trainerInviteModalOpen && (
+                <TrainerInviteModal
+                  storeCode={accountDetails?.storeCode ?? storeDetails?.storeCode ?? user.storeCode ?? null}
+                  onClose={() => setTrainerInviteModalOpen(false)}
+                />
+              )}
               <p className="mb-2 text-sm font-semibold">Team members</p>
               {teamActionError && (
                 <p className="mb-2 text-sm text-rose-600">{teamActionError}</p>
@@ -2569,7 +2722,7 @@ function SettingsPanel({
                           <span className="ml-2 text-xs font-normal opacity-70">(you)</span>
                         )}
                       </p>
-                      <p>{member.email}</p>
+                      <p>@{member.username}</p>
                       {member.role === "TRAINER" && (
                         <p>
                           Invite code used: {member.trainerInviteCodeUsed ?? "—"}
@@ -2688,7 +2841,9 @@ function SettingsPanel({
                   <p className="opacity-70">No trainees yet.</p>
                 )}
                 {dashboard.map((row) => {
-                  const busy = deletingTraineeId === row.id;
+                  const busyDelete = deletingTraineeId === row.id;
+                  const busyEdit = savingTraineeId === row.id;
+                  const busy = busyDelete || busyEdit;
                   return (
                     <div
                       key={row.id}
@@ -2706,20 +2861,36 @@ function SettingsPanel({
                           Remaining {row.remainingPositions}
                         </p>
                       </div>
-                      <button
-                        type="button"
-                        aria-label={`Delete trainee ${row.name}`}
-                        title={`Delete ${row.name}`}
-                        disabled={busy}
-                        className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-rose-600 text-white hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-60"
-                        onClick={() => {
-                          if (busy) return;
-                          setTraineeActionError("");
-                          setTraineePendingDelete(row);
-                        }}
-                      >
-                        <TrashIcon className="h-5 w-5" />
-                      </button>
+                      <div className="flex shrink-0 gap-2">
+                        <button
+                          type="button"
+                          aria-label={`Edit trainee ${row.name}`}
+                          title={`Edit ${row.name}`}
+                          disabled={busy}
+                          className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-slate-300 bg-slate-100 text-slate-700 hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 dark:hover:bg-slate-600"
+                          onClick={() => {
+                            if (busy) return;
+                            setTraineeActionError("");
+                            setTraineePendingEdit(row);
+                          }}
+                        >
+                          <PencilIcon className="h-5 w-5" />
+                        </button>
+                        <button
+                          type="button"
+                          aria-label={`Delete trainee ${row.name}`}
+                          title={`Delete ${row.name}`}
+                          disabled={busy}
+                          className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-rose-600 text-white hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-60"
+                          onClick={() => {
+                            if (busy) return;
+                            setTraineeActionError("");
+                            setTraineePendingDelete(row);
+                          }}
+                        >
+                          <TrashIcon className="h-5 w-5" />
+                        </button>
+                      </div>
                     </div>
                   );
                 })}
@@ -2751,6 +2922,37 @@ function SettingsPanel({
               setTraineeActionError((err as Error).message);
             } finally {
               setDeletingTraineeId(null);
+            }
+          }}
+        />
+      )}
+      {traineePendingEdit !== null && (
+        <EditTraineeModal
+          key={traineePendingEdit.id}
+          trainee={traineePendingEdit}
+          busy={savingTraineeId === traineePendingEdit.id}
+          error={traineeActionError}
+          onClose={() => {
+            if (savingTraineeId === traineePendingEdit.id) return;
+            setTraineePendingEdit(null);
+            setTraineeActionError("");
+          }}
+          onSave={async (nextName) => {
+            const row = traineePendingEdit;
+            if (!row || savingTraineeId) return;
+            setTraineeActionError("");
+            setSavingTraineeId(row.id);
+            try {
+              await api(`/api/trainees/${row.id}`, {
+                method: "PUT",
+                body: JSON.stringify({ name: nextName }),
+              });
+              setTraineePendingEdit(null);
+              await refreshCore();
+            } catch (err) {
+              setTraineeActionError((err as Error).message);
+            } finally {
+              setSavingTraineeId(null);
             }
           }}
         />

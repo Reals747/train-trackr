@@ -8,7 +8,7 @@ const EXPIRES_IN = "12h";
 
 export type AuthPayload = {
   userId: string;
-  email: string;
+  username: string;
   role: Role;
   storeId: string;
   name: string;

@@ -18,11 +18,12 @@ export async function GET() {
     account: {
       id: dbUser.id,
       name: dbUser.name,
-      email: dbUser.email,
+      username: dbUser.username,
       role: dbUser.role,
       createdAt: dbUser.createdAt,
       storeName: dbUser.store.name,
       storeId: dbUser.storeId,
+      storeCode: dbUser.store.storeCode,
     },
   });
 }

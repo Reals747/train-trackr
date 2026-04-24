@@ -17,6 +17,8 @@ enum Role {
 model Store {
   id               String          @id @default(cuid())
   name             String
+  /** Permanent, unique 8-digit join code shown in Settings; shared with trainers so they can sign in. */
+  storeCode        String          @unique
   createdAt        DateTime        @default(now())
   users            User[]
   positions        Position[]
@@ -29,10 +31,13 @@ model Store {
 model User {
   id                      String               @id @default(cuid())
   name                    String
-  email                   String               @unique
-  passwordHash            String
+  /** Login identifier for owners/admins/trainers. Unique per store, so different stores can share usernames. */
+  username                String
+  /** Null for trainers (no password flow); required for owners/admins. */
+  passwordHash            String?
   role                    Role
   storeId                 String
+  /** Legacy: kept for telemetry only; new trainers don't use single-use invite codes. */
   trainerInviteCodeUsed   String?
   /** Per-user UI prefs (accent, dark mode, etc.) — synced across devices for this account. */
   appearanceJson        Json?
@@ -42,6 +47,8 @@ model User {
   activityLogs            ActivityLog[]
   announcementsAuthored   Announcement[]       @relation("AnnouncementAuthor")
   announcementComments    AnnouncementComment[]
+
+  @@unique([storeId, username])
 }
 
 model Announcement {
@@ -76,8 +83,6 @@ model StoreSetting {
   storeId               String    @unique
   trainerCanViewAll     Boolean   @default(true)
   darkModeEnabled       Boolean   @default(false)
-  trainerInviteCode     String?
-  trainerInviteExpiresAt DateTime?
   store                 Store     @relation(fields: [storeId], references: [id], onDelete: Cascade)
 }
 

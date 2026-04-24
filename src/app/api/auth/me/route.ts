@@ -17,11 +17,12 @@ export async function GET() {
   return NextResponse.json({
     user: {
       id: dbUser.id,
-      email: dbUser.email,
+      username: dbUser.username,
       role: dbUser.role,
       name: dbUser.name,
       storeId: dbUser.storeId,
       storeName: dbUser.store.name,
+      storeCode: dbUser.store.storeCode,
     },
   });
 }

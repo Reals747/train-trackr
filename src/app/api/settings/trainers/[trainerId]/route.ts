@@ -54,7 +54,7 @@ export async function PATCH(
     select: {
       id: true,
       name: true,
-      email: true,
+      username: true,
       role: true,
       createdAt: true,
       trainerInviteCodeUsed: true,

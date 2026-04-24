@@ -3,11 +3,15 @@ import { z } from "zod";
 import { errorResponse, requireAuth } from "@/lib/api";
 import { prisma } from "@/lib/prisma";
 
-const schema = z.object({
-  name: z.string().min(2),
-  startDate: z.string().min(1),
-  positionIds: z.array(z.string()).default([]),
-});
+const schema = z
+  .object({
+    name: z.string().min(2).optional(),
+    startDate: z.string().min(1).optional(),
+    positionIds: z.array(z.string()).optional(),
+  })
+  .refine((value) => Object.values(value).some((v) => v !== undefined), {
+    message: "At least one field must be provided",
+  });
 
 export async function PUT(
   request: Request,
@@ -26,19 +30,19 @@ export async function PUT(
   if (!parsed.success) return errorResponse("Invalid trainee payload");
 
   const updated = await prisma.$transaction(async (tx) => {
-    await tx.trainee.update({
-      where: { id: traineeId },
-      data: {
-        name: parsed.data.name.trim(),
-        startDate: new Date(parsed.data.startDate),
-      },
-      include: { positions: { include: { position: true } } },
-    });
-    await tx.traineePosition.deleteMany({ where: { traineeId } });
-    await tx.traineePosition.createMany({
-      data: parsed.data.positionIds.map((positionId) => ({ traineeId, positionId })),
-      skipDuplicates: true,
-    });
+    const data: { name?: string; startDate?: Date } = {};
+    if (parsed.data.name !== undefined) data.name = parsed.data.name.trim();
+    if (parsed.data.startDate !== undefined) data.startDate = new Date(parsed.data.startDate);
+    if (Object.keys(data).length > 0) {
+      await tx.trainee.update({ where: { id: traineeId }, data });
+    }
+    if (parsed.data.positionIds !== undefined) {
+      await tx.traineePosition.deleteMany({ where: { traineeId } });
+      await tx.traineePosition.createMany({
+        data: parsed.data.positionIds.map((positionId) => ({ traineeId, positionId })),
+        skipDuplicates: true,
+      });
+    }
     return tx.trainee.findUniqueOrThrow({
       where: { id: traineeId },
       include: { positions: { include: { position: true } } },

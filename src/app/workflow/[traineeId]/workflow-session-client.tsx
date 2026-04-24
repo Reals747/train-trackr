@@ -9,8 +9,9 @@ import { useCallback, useEffect, useState } from "react";
 type AppUser = {
   id: string;
   name: string;
-  email: string;
+  username: string;
   storeName: string;
+  storeCode: string;
   role: RoleName;
 };
 type AppearanceSettings = {

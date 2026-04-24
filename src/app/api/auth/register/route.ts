@@ -4,11 +4,22 @@ import { z } from "zod";
 import { hashPassword, setAuthCookie, signToken } from "@/lib/auth";
 import { jsonAuthRouteError } from "@/lib/auth-route-error-response";
 import { prisma } from "@/lib/prisma";
+import { generateUniqueStoreCode } from "@/lib/store-code";
+
+const usernameSchema = z
+  .string()
+  .trim()
+  .min(2, "Username must be at least 2 characters")
+  .max(64)
+  .regex(
+    /^[a-zA-Z0-9._-]+$/,
+    "Username: letters, numbers, dots, dashes, and underscores only",
+  );
 
 const schema = z.object({
-  storeName: z.string().min(2),
-  name: z.string().min(2),
-  email: z.string().email(),
+  storeName: z.string().trim().min(2),
+  name: z.string().trim().min(2),
+  username: usernameSchema,
   password: z.string().min(8),
 });
 
@@ -19,21 +30,23 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
     }
 
-    const { storeName, name, email, password } = parsed.data;
-    const existing = await prisma.user.findUnique({ where: { email } });
-    if (existing) {
-      return NextResponse.json({ error: "Email already in use" }, { status: 409 });
-    }
-
+    const { storeName, name, username, password } = parsed.data;
+    const loginKey = username.toLowerCase();
     const passwordHash = await hashPassword(password);
+    const storeCode = await generateUniqueStoreCode();
+
     const { store, user } = await prisma.$transaction(async (tx) => {
       const createdStore = await tx.store.create({
-        data: { name: storeName, settings: { create: {} } },
+        data: {
+          name: storeName,
+          storeCode,
+          settings: { create: {} },
+        },
       });
       const createdUser = await tx.user.create({
         data: {
-          name,
-          email,
+          name: name.trim(),
+          username: loginKey,
           passwordHash,
           role: Role.OWNER,
           storeId: createdStore.id,
@@ -44,7 +57,7 @@ export async function POST(request: Request) {
 
     const token = signToken({
       userId: user.id,
-      email: user.email,
+      username: user.username,
       role: user.role,
       storeId: store.id,
       name: user.name,
@@ -54,11 +67,12 @@ export async function POST(request: Request) {
     return NextResponse.json({
       user: {
         id: user.id,
-        email: user.email,
+        username: user.username,
         role: user.role,
         name: user.name,
         storeId: store.id,
         storeName: store.name,
+        storeCode: store.storeCode,
       },
     });
   } catch (error) {
