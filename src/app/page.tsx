@@ -14,7 +14,25 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type ReactNode,
 } from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
+import {
+  DndContext,
+  type DragEndEvent,
+  KeyboardSensor,
+  PointerSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  arrayMove,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { formatDateTime } from "@/lib/format-datetime";
 import { can, roleLabel, type Permission, type RoleName } from "@/lib/permissions";
 
@@ -27,11 +45,14 @@ type AppUser = {
   storeName: string;
   storeCode: string;
 };
+/** "header" rows are non-clickable section dividers and never count toward completion. */
+type ChecklistKind = "item" | "header";
 type Position = {
   id: string;
   name: string;
   hidden: boolean;
-  items: { id: string; text: string; description: string | null }[];
+  order: number;
+  items: { id: string; text: string; description: string | null; kind: ChecklistKind }[];
 };
 type Trainee = {
   id: string;
@@ -287,6 +308,26 @@ function TrashIcon({ className }: { className?: string }) {
         strokeLinejoin="round"
         d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0"
       />
+    </svg>
+  );
+}
+
+/** Vertical 6-dot drag handle for sortable list rows. */
+function DragHandleIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 20 20"
+      fill="currentColor"
+      className={className ?? "h-5 w-5 shrink-0"}
+      aria-hidden
+    >
+      <circle cx="7" cy="4" r="1.4" />
+      <circle cx="13" cy="4" r="1.4" />
+      <circle cx="7" cy="10" r="1.4" />
+      <circle cx="13" cy="10" r="1.4" />
+      <circle cx="7" cy="16" r="1.4" />
+      <circle cx="13" cy="16" r="1.4" />
     </svg>
   );
 }
@@ -884,6 +925,7 @@ export default function Home() {
           storeDetails={storeDetails}
           teamMembers={teamMembers}
           positions={positions}
+          setPositions={setPositions}
           dashboard={dashboard}
           category={settingsCategory}
           appearance={appearance}
@@ -1789,9 +1831,11 @@ function TraineePanel({
 /** Positions and checklists — Settings → Training Setup (managers only). */
 function TrainingSetupSection({
   positions,
+  setPositions,
   onRefresh,
 }: {
   positions: Position[];
+  setPositions: Dispatch<SetStateAction<Position[]>>;
   onRefresh: () => Promise<void>;
 }) {
   const [createOpen, setCreateOpen] = useState(false);
@@ -1801,10 +1845,43 @@ function TrainingSetupSection({
 
   const sorted = useMemo(() => {
     return [...positions].sort((a, b) => {
-      if (a.hidden !== b.hidden) return a.hidden ? 1 : -1;
+      if (a.order !== b.order) return a.order - b.order;
       return a.name.localeCompare(b.name);
     });
   }, [positions]);
+  const sortedIds = useMemo(() => sorted.map((p) => p.id), [sorted]);
+
+  /** PointerSensor activation distance lets normal click-to-expand still work without immediately starting a drag. */
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+
+  function handlePositionDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const oldIndex = sortedIds.indexOf(String(active.id));
+    const newIndex = sortedIds.indexOf(String(over.id));
+    if (oldIndex < 0 || newIndex < 0) return;
+    const reordered = arrayMove(sorted, oldIndex, newIndex);
+
+    // Optimistic: rewrite local order indexes immediately so the list reflects the drag.
+    const previous = positions;
+    setPositions((prev) => {
+      const orderMap = new Map(reordered.map((p, i) => [p.id, i] as const));
+      return prev.map((p) =>
+        orderMap.has(p.id) ? { ...p, order: orderMap.get(p.id) ?? p.order } : p,
+      );
+    });
+
+    api("/api/positions/reorder", {
+      method: "POST",
+      body: JSON.stringify({ orderedIds: reordered.map((p) => p.id) }),
+    }).catch(() => {
+      // Roll back to previous order on failure.
+      setPositions(previous);
+    });
+  }
 
   useEffect(() => {
     if (!createOpen) return;
@@ -1905,25 +1982,40 @@ function TrainingSetupSection({
         </div>
       )}
 
-      <div className="space-y-2">
-        {sorted.length === 0 && (
-          <p className="rounded-lg border border-dashed p-6 text-center text-sm opacity-70">
-            No positions yet. Use Create Position to add one.
-          </p>
-        )}
-        {sorted.map((position) => (
-          <PositionTrainingRow key={position.id} position={position} onRefresh={onRefresh} />
-        ))}
-      </div>
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCenter}
+        onDragEnd={handlePositionDragEnd}
+      >
+        <SortableContext items={sortedIds} strategy={verticalListSortingStrategy}>
+          <div className="space-y-2">
+            {sorted.length === 0 && (
+              <p className="rounded-lg border border-dashed p-6 text-center text-sm opacity-70">
+                No positions yet. Use Create Position to add one.
+              </p>
+            )}
+            {sorted.map((position) => (
+              <PositionTrainingRow
+                key={position.id}
+                position={position}
+                setPositions={setPositions}
+                onRefresh={onRefresh}
+              />
+            ))}
+          </div>
+        </SortableContext>
+      </DndContext>
     </div>
   );
 }
 
 function PositionTrainingRow({
   position,
+  setPositions,
   onRefresh,
 }: {
   position: Position;
+  setPositions: Dispatch<SetStateAction<Position[]>>;
   onRefresh: () => Promise<void>;
 }) {
   const [expanded, setExpanded] = useState(false);
@@ -1933,6 +2025,58 @@ function PositionTrainingRow({
   const [itemDesc, setItemDesc] = useState("");
   const [itemErr, setItemErr] = useState("");
   const [actionErr, setActionErr] = useState("");
+  const [renameOpen, setRenameOpen] = useState(false);
+  const [renameName, setRenameName] = useState(position.name);
+  const [renameErr, setRenameErr] = useState("");
+  const [editingItem, setEditingItem] = useState<
+    { id: string; text: string; description: string; kind: ChecklistKind } | null
+  >(null);
+  const [editItemErr, setEditItemErr] = useState("");
+  const [addHeaderOpen, setAddHeaderOpen] = useState(false);
+  const [addHeaderText, setAddHeaderText] = useState("");
+  const [addHeaderErr, setAddHeaderErr] = useState("");
+
+  /** Drag-and-drop wiring: this row is itself a sortable position; items inside use a nested DndContext. */
+  const {
+    setNodeRef: setPositionNodeRef,
+    attributes: positionDragAttributes,
+    listeners: positionDragListeners,
+    transform: positionTransform,
+    transition: positionTransition,
+    isDragging: isPositionDragging,
+  } = useSortable({ id: position.id });
+  const positionStyle = {
+    transform: CSS.Transform.toString(positionTransform),
+    transition: positionTransition,
+    opacity: isPositionDragging ? 0.6 : 1,
+  };
+  const itemIds = useMemo(() => position.items.map((it) => it.id), [position.items]);
+  const itemSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+
+  function handleItemDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const oldIndex = itemIds.indexOf(String(active.id));
+    const newIndex = itemIds.indexOf(String(over.id));
+    if (oldIndex < 0 || newIndex < 0) return;
+    const reordered = arrayMove(position.items, oldIndex, newIndex);
+    const previous = position.items;
+    setPositions((prev) =>
+      prev.map((p) => (p.id === position.id ? { ...p, items: reordered } : p)),
+    );
+    api(`/api/positions/${position.id}/items/reorder`, {
+      method: "POST",
+      body: JSON.stringify({ orderedIds: reordered.map((it) => it.id) }),
+    }).catch((err) => {
+      setPositions((prev) =>
+        prev.map((p) => (p.id === position.id ? { ...p, items: previous } : p)),
+      );
+      setActionErr(`Reorder failed: ${(err as Error).message}`);
+    });
+  }
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -1945,8 +2089,37 @@ function PositionTrainingRow({
     return () => document.removeEventListener("mousedown", close);
   }, [menuOpen]);
 
+  useEffect(() => {
+    if (!renameOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setRenameOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [renameOpen]);
+
+  useEffect(() => {
+    if (!editingItem) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setEditingItem(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [editingItem]);
+
+  useEffect(() => {
+    if (!addHeaderOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setAddHeaderOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [addHeaderOpen]);
+
   return (
     <div
+      ref={setPositionNodeRef}
+      style={positionStyle}
       className={`rounded-lg border text-sm ${
         position.hidden
           ? "border-slate-200/90 bg-slate-50/90 text-foreground/85 dark:border-slate-600/90 dark:bg-slate-900/55 dark:text-foreground/85"
@@ -1954,6 +2127,16 @@ function PositionTrainingRow({
       } ${menuOpen ? "relative z-50" : ""}`}
     >
       <div className="flex items-center gap-2 px-3 py-2">
+        <button
+          type="button"
+          aria-label={`Drag position ${position.name}`}
+          title="Drag to reorder"
+          className="shrink-0 cursor-grab touch-none rounded p-1 text-slate-400 hover:text-slate-700 active:cursor-grabbing dark:text-slate-500 dark:hover:text-slate-200"
+          {...positionDragAttributes}
+          {...positionDragListeners}
+        >
+          <DragHandleIcon className="h-4 w-4" />
+        </button>
         <button
           type="button"
           className="flex min-w-0 flex-1 items-center gap-2 text-left font-medium"
@@ -1986,19 +2169,41 @@ function PositionTrainingRow({
               <button
                 type="button"
                 className="block w-full px-3 py-2 text-left text-sm hover:bg-slate-100 dark:hover:bg-slate-700"
-                onClick={async (e) => {
+                onClick={(e) => {
                   e.stopPropagation();
                   setMenuOpen(false);
                   setActionErr("");
-                  try {
-                    await api(`/api/positions/${position.id}`, {
-                      method: "PATCH",
-                      body: JSON.stringify({ hidden: !position.hidden }),
-                    });
-                    await onRefresh();
-                  } catch (err) {
-                    setActionErr((err as Error).message);
-                  }
+                  setRenameName(position.name);
+                  setRenameErr("");
+                  setRenameOpen(true);
+                }}
+              >
+                Edit position name
+              </button>
+              <button
+                type="button"
+                className="block w-full px-3 py-2 text-left text-sm hover:bg-slate-100 dark:hover:bg-slate-700"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setMenuOpen(false);
+                  setActionErr("");
+                  const nextHidden = !position.hidden;
+                  setPositions((prev) =>
+                    prev.map((p) =>
+                      p.id === position.id ? { ...p, hidden: nextHidden } : p,
+                    ),
+                  );
+                  api(`/api/positions/${position.id}`, {
+                    method: "PATCH",
+                    body: JSON.stringify({ hidden: nextHidden }),
+                  }).catch((err) => {
+                    setPositions((prev) =>
+                      prev.map((p) =>
+                        p.id === position.id ? { ...p, hidden: !nextHidden } : p,
+                      ),
+                    );
+                    setActionErr(`Update failed: ${(err as Error).message}`);
+                  });
                 }}
               >
                 {position.hidden ? "Show position" : "Hide position"}
@@ -2006,7 +2211,7 @@ function PositionTrainingRow({
               <button
                 type="button"
                 className="block w-full px-3 py-2 text-left text-sm text-rose-700 hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-950/40"
-                onClick={async (e) => {
+                onClick={(e) => {
                   e.stopPropagation();
                   setMenuOpen(false);
                   setActionErr("");
@@ -2017,12 +2222,16 @@ function PositionTrainingRow({
                   ) {
                     return;
                   }
-                  try {
-                    await api(`/api/positions/${position.id}`, { method: "DELETE" });
-                    await onRefresh();
-                  } catch (err) {
-                    setActionErr((err as Error).message);
-                  }
+                  const previousPosition = position;
+                  setPositions((prev) => prev.filter((p) => p.id !== position.id));
+                  api(`/api/positions/${position.id}`, { method: "DELETE" }).catch((err) => {
+                    setPositions((prev) =>
+                      prev.some((p) => p.id === previousPosition.id)
+                        ? prev
+                        : [...prev, previousPosition],
+                    );
+                    setActionErr(`Delete failed: ${(err as Error).message}`);
+                  });
                 }}
               >
                 Delete position
@@ -2035,39 +2244,73 @@ function PositionTrainingRow({
 
       {expanded && (
         <div className="space-y-3 border-t border-slate-200 px-3 py-3 dark:border-slate-600">
+          <div className="flex justify-end">
+            <button
+              type="button"
+              className="rounded-lg border border-dashed border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700"
+              onClick={() => {
+                setAddHeaderText("");
+                setAddHeaderErr("");
+                setAddHeaderOpen(true);
+              }}
+            >
+              + Add section header
+            </button>
+          </div>
+
           {position.items.length === 0 ? (
             <p className="text-xs opacity-70">No checklist items yet.</p>
           ) : (
-            <ul className="space-y-2">
-              {position.items.map((item) => (
-                <li
-                  key={item.id}
-                  className="flex items-start justify-between gap-2 rounded-md border border-slate-200 bg-slate-50/80 px-2 py-2 dark:border-slate-600 dark:bg-slate-800/50"
-                >
-                  <span className="min-w-0 flex-1">
-                    <span className="block">{item.text}</span>
-                    {item.description && (
-                      <span className="mt-0.5 block text-xs opacity-70">{item.description}</span>
-                    )}
-                  </span>
-                  <button
-                    type="button"
-                    className="shrink-0 rounded border border-rose-300 px-2 py-1 text-xs text-rose-700 hover:bg-rose-50 dark:border-rose-500/50 dark:text-rose-400 dark:hover:bg-rose-950/50"
-                    onClick={async () => {
-                      if (!window.confirm("Remove this checklist item?")) return;
-                      try {
-                        await api(`/api/checklist-items/${item.id}`, { method: "DELETE" });
-                        await onRefresh();
-                      } catch (err) {
-                        setActionErr((err as Error).message);
-                      }
-                    }}
-                  >
-                    Delete
-                  </button>
-                </li>
-              ))}
-            </ul>
+            <DndContext
+              sensors={itemSensors}
+              collisionDetection={closestCenter}
+              onDragEnd={handleItemDragEnd}
+            >
+              <SortableContext items={itemIds} strategy={verticalListSortingStrategy}>
+                <ul className="space-y-2">
+                  {position.items.map((item) => (
+                    <SortableChecklistItemRow
+                      key={item.id}
+                      item={item}
+                      onEdit={() => {
+                        setActionErr("");
+                        setEditItemErr("");
+                        setEditingItem({
+                          id: item.id,
+                          text: item.text,
+                          description: item.description ?? "",
+                          kind: item.kind,
+                        });
+                      }}
+                      onDelete={() => {
+                        const label =
+                          item.kind === "header" ? "Remove this section header?" : "Remove this checklist item?";
+                        if (!window.confirm(label)) return;
+                        const previousItems = position.items;
+                        setActionErr("");
+                        setPositions((prev) =>
+                          prev.map((p) =>
+                            p.id === position.id
+                              ? { ...p, items: p.items.filter((it) => it.id !== item.id) }
+                              : p,
+                          ),
+                        );
+                        api(`/api/checklist-items/${item.id}`, { method: "DELETE" }).catch(
+                          (err) => {
+                            setPositions((prev) =>
+                              prev.map((p) =>
+                                p.id === position.id ? { ...p, items: previousItems } : p,
+                              ),
+                            );
+                            setActionErr(`Delete failed: ${(err as Error).message}`);
+                          },
+                        );
+                      }}
+                    />
+                  ))}
+                </ul>
+              </SortableContext>
+            </DndContext>
           )}
 
           <form
@@ -2114,7 +2357,400 @@ function PositionTrainingRow({
           </form>
         </div>
       )}
+      {renameOpen &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 p-4"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={`edit-position-title-${position.id}`}
+            onMouseDown={(e) => {
+              if (e.target === e.currentTarget) {
+                setRenameOpen(false);
+              }
+            }}
+          >
+            <form
+              className="w-full max-w-md rounded-xl border bg-card p-5 shadow-lg"
+              onMouseDown={(e) => e.stopPropagation()}
+              onSubmit={(e) => {
+                e.preventDefault();
+                const name = renameName.trim();
+                if (name.length < 2) {
+                  setRenameErr("Enter at least 2 characters.");
+                  return;
+                }
+                if (name === position.name) {
+                  setRenameOpen(false);
+                  return;
+                }
+                const previousName = position.name;
+                setRenameErr("");
+                setRenameOpen(false);
+                setPositions((prev) =>
+                  prev.map((p) => (p.id === position.id ? { ...p, name } : p)),
+                );
+                api(`/api/positions/${position.id}`, {
+                  method: "PUT",
+                  body: JSON.stringify({ name }),
+                }).catch((err) => {
+                  setPositions((prev) =>
+                    prev.map((p) => (p.id === position.id ? { ...p, name: previousName } : p)),
+                  );
+                  setActionErr(`Rename failed: ${(err as Error).message}`);
+                });
+              }}
+            >
+              <h3 id={`edit-position-title-${position.id}`} className="mb-3 text-lg font-semibold">
+                Edit position name
+              </h3>
+              <label className="mb-1 block text-sm font-medium">Position name</label>
+              <input
+                autoFocus
+                value={renameName}
+                onChange={(e) => setRenameName(e.target.value)}
+                placeholder="e.g. Front Counter"
+                className="mb-3 w-full rounded-lg border bg-background p-3"
+              />
+              {renameErr && <p className="mb-3 text-sm text-rose-600">{renameErr}</p>}
+              <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  className="rounded-lg border px-4 py-2 text-sm font-medium"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setRenameOpen(false);
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="btn-accent rounded-lg px-4 py-2 text-sm font-medium"
+                >
+                  Continue
+                </button>
+              </div>
+            </form>
+          </div>,
+          document.body,
+        )}
+      {editingItem &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 p-4"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={`edit-checklist-item-title-${position.id}`}
+            onMouseDown={(e) => {
+              if (e.target === e.currentTarget) {
+                setEditingItem(null);
+              }
+            }}
+          >
+            <form
+              className="w-full max-w-md rounded-xl border bg-card p-5 shadow-lg"
+              onMouseDown={(e) => e.stopPropagation()}
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (!editingItem) return;
+                const text = editingItem.text.trim();
+                const description = editingItem.description.trim();
+                const editingKind = editingItem.kind;
+                if (text.length < 1) {
+                  setEditItemErr(
+                    editingKind === "header"
+                      ? "Header text is required."
+                      : "Checklist text is required.",
+                  );
+                  return;
+                }
+                const itemId = editingItem.id;
+                const previous = position.items.find((it) => it.id === itemId);
+                if (!previous) {
+                  setEditItemErr("Item not found.");
+                  return;
+                }
+                setEditItemErr("");
+                setEditingItem(null);
+                setPositions((prev) =>
+                  prev.map((p) =>
+                    p.id === position.id
+                      ? {
+                          ...p,
+                          items: p.items.map((it) =>
+                            it.id === itemId
+                              ? {
+                                  ...it,
+                                  text,
+                                  description:
+                                    editingKind === "header" ? null : description || null,
+                                }
+                              : it,
+                          ),
+                        }
+                      : p,
+                  ),
+                );
+                api(`/api/checklist-items/${itemId}`, {
+                  method: "PUT",
+                  body: JSON.stringify({
+                    text,
+                    description: editingKind === "header" ? undefined : description || undefined,
+                    kind: editingKind,
+                  }),
+                }).catch((err) => {
+                  setPositions((prev) =>
+                    prev.map((p) =>
+                      p.id === position.id
+                        ? {
+                            ...p,
+                            items: p.items.map((it) =>
+                              it.id === itemId
+                                ? { ...it, text: previous.text, description: previous.description }
+                                : it,
+                            ),
+                          }
+                        : p,
+                    ),
+                  );
+                  setActionErr(`Edit failed: ${(err as Error).message}`);
+                });
+              }}
+            >
+              <h3
+                id={`edit-checklist-item-title-${position.id}`}
+                className="mb-3 text-lg font-semibold"
+              >
+                {editingItem.kind === "header" ? "Edit section header" : "Edit checklist item"}
+              </h3>
+              <label className="mb-1 block text-sm font-medium">
+                {editingItem.kind === "header" ? "Header text" : "Checklist text"}
+              </label>
+              <input
+                autoFocus
+                value={editingItem.text}
+                onChange={(e) =>
+                  setEditingItem((prev) => (prev ? { ...prev, text: e.target.value } : prev))
+                }
+                placeholder={editingItem.kind === "header" ? "Section header" : "Checklist text"}
+                className="mb-3 w-full rounded-lg border bg-background p-3"
+              />
+              {editingItem.kind !== "header" && (
+                <>
+                  <label className="mb-1 block text-sm font-medium">Description (optional)</label>
+                  <input
+                    value={editingItem.description}
+                    onChange={(e) =>
+                      setEditingItem((prev) =>
+                        prev ? { ...prev, description: e.target.value } : prev,
+                      )
+                    }
+                    placeholder="Description (optional)"
+                    className="mb-3 w-full rounded-lg border bg-background p-3"
+                  />
+                </>
+              )}
+              {editItemErr && <p className="mb-3 text-sm text-rose-600">{editItemErr}</p>}
+              <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  className="rounded-lg border px-4 py-2 text-sm font-medium"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setEditingItem(null);
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="btn-accent rounded-lg px-4 py-2 text-sm font-medium"
+                >
+                  Save
+                </button>
+              </div>
+            </form>
+          </div>,
+          document.body,
+        )}
+      {addHeaderOpen &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 p-4"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={`add-header-title-${position.id}`}
+            onMouseDown={(e) => {
+              if (e.target === e.currentTarget) {
+                setAddHeaderOpen(false);
+              }
+            }}
+          >
+            <form
+              className="w-full max-w-md rounded-xl border bg-card p-5 shadow-lg"
+              onMouseDown={(e) => e.stopPropagation()}
+              onSubmit={async (e) => {
+                e.preventDefault();
+                const text = addHeaderText.trim();
+                if (text.length < 1) {
+                  setAddHeaderErr("Header text is required.");
+                  return;
+                }
+                setAddHeaderErr("");
+                try {
+                  const created = await api<{
+                    item: {
+                      id: string;
+                      text: string;
+                      description: string | null;
+                      kind: ChecklistKind;
+                    };
+                  }>(`/api/positions/${position.id}/items`, {
+                    method: "POST",
+                    body: JSON.stringify({ text, kind: "header" }),
+                  });
+                  setPositions((prev) =>
+                    prev.map((p) =>
+                      p.id === position.id
+                        ? { ...p, items: [...p.items, created.item] }
+                        : p,
+                    ),
+                  );
+                  setAddHeaderOpen(false);
+                  setAddHeaderText("");
+                } catch (err) {
+                  setAddHeaderErr((err as Error).message);
+                }
+              }}
+            >
+              <h3 id={`add-header-title-${position.id}`} className="mb-3 text-lg font-semibold">
+                Add section header
+              </h3>
+              <label className="mb-1 block text-sm font-medium">Header text</label>
+              <input
+                autoFocus
+                value={addHeaderText}
+                onChange={(e) => setAddHeaderText(e.target.value)}
+                placeholder="e.g. Bagging basics"
+                className="mb-3 w-full rounded-lg border bg-background p-3"
+              />
+              {addHeaderErr && <p className="mb-3 text-sm text-rose-600">{addHeaderErr}</p>}
+              <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  className="rounded-lg border px-4 py-2 text-sm font-medium"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setAddHeaderOpen(false);
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="btn-accent rounded-lg px-4 py-2 text-sm font-medium"
+                >
+                  Add header
+                </button>
+              </div>
+            </form>
+          </div>,
+          document.body,
+        )}
     </div>
+  );
+}
+
+/** A single sortable row in the checklist list. Renders both regular items and section headers. */
+function SortableChecklistItemRow({
+  item,
+  onEdit,
+  onDelete,
+}: {
+  item: { id: string; text: string; description: string | null; kind: ChecklistKind };
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
+  const {
+    setNodeRef: setItemNodeRef,
+    attributes: itemDragAttributes,
+    listeners: itemDragListeners,
+    transform: itemTransform,
+    transition: itemTransition,
+    isDragging: isItemDragging,
+  } = useSortable({ id: item.id });
+  const style = {
+    transform: CSS.Transform.toString(itemTransform),
+    transition: itemTransition,
+    opacity: isItemDragging ? 0.6 : 1,
+  };
+  const isHeader = item.kind === "header";
+  return (
+    <li
+      ref={setItemNodeRef}
+      style={style}
+      className={
+        isHeader
+          ? "flex items-center justify-between gap-2 rounded-md border border-slate-300 bg-slate-200/70 px-2 py-2 dark:border-slate-500 dark:bg-slate-700/70"
+          : "flex items-start justify-between gap-2 rounded-md border border-slate-200 bg-slate-50/80 px-2 py-2 dark:border-slate-600 dark:bg-slate-800/50"
+      }
+    >
+      <button
+        type="button"
+        aria-label={isHeader ? `Drag section header ${item.text}` : `Drag checklist item ${item.text}`}
+        title="Drag to reorder"
+        className="mt-0.5 shrink-0 cursor-grab touch-none rounded p-1 text-slate-400 hover:text-slate-700 active:cursor-grabbing dark:text-slate-500 dark:hover:text-slate-200"
+        {...itemDragAttributes}
+        {...itemDragListeners}
+      >
+        <DragHandleIcon className="h-4 w-4" />
+      </button>
+      <span className="min-w-0 flex-1">
+        {isHeader ? (
+          <span className="block text-sm font-semibold uppercase tracking-wide text-slate-800 dark:text-slate-100">
+            {item.text}
+          </span>
+        ) : (
+          <>
+            <span className="block">{item.text}</span>
+            {item.description && (
+              <span className="mt-0.5 block text-xs opacity-70">{item.description}</span>
+            )}
+          </>
+        )}
+      </span>
+      <div className="flex shrink-0 gap-2">
+        <button
+          type="button"
+          aria-label={
+            isHeader ? `Edit section header ${item.text}` : `Edit checklist item ${item.text}`
+          }
+          title={isHeader ? "Edit section header" : "Edit checklist item"}
+          className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-slate-300 bg-slate-100 text-slate-700 hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 dark:hover:bg-slate-600"
+          onClick={onEdit}
+        >
+          <PencilIcon className="h-5 w-5" />
+        </button>
+        <button
+          type="button"
+          aria-label={
+            isHeader ? `Delete section header ${item.text}` : `Delete checklist item ${item.text}`
+          }
+          title={isHeader ? "Delete section header" : "Delete checklist item"}
+          className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-rose-600 text-white hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-60"
+          onClick={onDelete}
+        >
+          <TrashIcon className="h-5 w-5" />
+        </button>
+      </div>
+    </li>
   );
 }
 
@@ -2436,6 +3072,7 @@ function SettingsPanel({
   storeDetails,
   teamMembers,
   positions,
+  setPositions,
   dashboard,
   category,
   appearance,
@@ -2452,6 +3089,7 @@ function SettingsPanel({
   storeDetails: StoreDetails | null;
   teamMembers: TeamMember[];
   positions: Position[];
+  setPositions: Dispatch<SetStateAction<Position[]>>;
   dashboard: DashboardRow[];
   category: SettingsCategory;
   appearance: AppearanceSettings;
@@ -2784,7 +3422,11 @@ function SettingsPanel({
           )}
 
           {category === "trainingSetup" && canManageTraining && (
-            <TrainingSetupSection positions={positions} onRefresh={refreshCore} />
+            <TrainingSetupSection
+              positions={positions}
+              setPositions={setPositions}
+              onRefresh={refreshCore}
+            />
           )}
 
           {category === "trainers" && canManageMembers && (

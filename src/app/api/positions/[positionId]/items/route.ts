@@ -7,6 +7,8 @@ import { prisma } from "@/lib/prisma";
 const schema = z.object({
   text: z.string().min(1),
   description: z.string().optional(),
+  /** "item" = trackable checklist row; "header" = visual divider that doesn't count toward completion. */
+  kind: z.enum(["item", "header"]).default("item"),
 });
 
 export async function POST(
@@ -34,13 +36,17 @@ export async function POST(
       positionId,
       text: parsed.data.text.trim(),
       description: parsed.data.description?.trim() || null,
+      kind: parsed.data.kind,
       order: (maxOrder._max.order ?? -1) + 1,
     },
   });
   await logActivity({
     storeId: user.storeId,
     userId: user.userId,
-    message: `Added checklist item to ${position.name}`,
+    message:
+      parsed.data.kind === "header"
+        ? `Added section header to ${position.name}`
+        : `Added checklist item to ${position.name}`,
   });
 
   return NextResponse.json({ item });

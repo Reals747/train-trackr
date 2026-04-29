@@ -26,7 +26,7 @@ export async function GET(request: Request) {
       storeId: user.storeId,
       ...(!includeHidden ? { hidden: false } : {}),
     },
-    orderBy: { name: "asc" },
+    orderBy: [{ order: "asc" }, { name: "asc" }],
     include: {
       items: { orderBy: { order: "asc" } },
     },
@@ -42,8 +42,16 @@ export async function POST(request: Request) {
   if (!parsed.success) return errorResponse("Position name is required");
 
   try {
+    const maxOrder = await prisma.position.aggregate({
+      where: { storeId: user.storeId },
+      _max: { order: true },
+    });
     const position = await prisma.position.create({
-      data: { storeId: user.storeId, name: parsed.data.name.trim() },
+      data: {
+        storeId: user.storeId,
+        name: parsed.data.name.trim(),
+        order: (maxOrder._max.order ?? -1) + 1,
+      },
     });
     await logActivity({
       storeId: user.storeId,

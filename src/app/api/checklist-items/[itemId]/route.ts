@@ -6,6 +6,8 @@ import { prisma } from "@/lib/prisma";
 const schema = z.object({
   text: z.string().min(1),
   description: z.string().optional(),
+  /** Allow editing kind in case a row needs to be promoted/demoted between item ↔ header. */
+  kind: z.enum(["item", "header"]).optional(),
 });
 
 export async function PUT(
@@ -27,11 +29,15 @@ export async function PUT(
   const parsed = schema.safeParse(await request.json());
   if (!parsed.success) return errorResponse("Invalid checklist item");
 
+  const nextKind = parsed.data.kind ?? item.kind;
   const updated = await prisma.checklistItem.update({
     where: { id: itemId },
     data: {
       text: parsed.data.text.trim(),
-      description: parsed.data.description?.trim() || null,
+      // Headers don't carry a description; force null when storing as a header.
+      description:
+        nextKind === "header" ? null : parsed.data.description?.trim() || null,
+      kind: nextKind,
     },
   });
   return NextResponse.json({ item: updated });

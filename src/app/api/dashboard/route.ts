@@ -29,7 +29,12 @@ export async function GET() {
     prisma.position.findMany({
       where: { storeId: user.storeId },
       include: {
-        items: { orderBy: [{ order: "asc" }, { createdAt: "asc" }] },
+        // Section headers (kind: "header") are organizational only and never count
+        // toward completion totals or appear in the dashboard's progress lists.
+        items: {
+          where: { kind: "item" },
+          orderBy: [{ order: "asc" }, { createdAt: "asc" }],
+        },
       },
     }),
   ]);

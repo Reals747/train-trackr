@@ -91,12 +91,15 @@ model Position {
   storeId    String
   name       String
   hidden     Boolean         @default(false)
+  /** Manual sort order within a store; 0-based ascending. Backfilled from alphabetical name on first migration. */
+  order      Int             @default(0)
   createdAt  DateTime        @default(now())
   store      Store           @relation(fields: [storeId], references: [id], onDelete: Cascade)
   items      ChecklistItem[]
   trainees   TraineePosition[]
 
   @@unique([storeId, name])
+  @@index([storeId, order])
 }
 
 model ChecklistItem {
@@ -105,6 +108,8 @@ model ChecklistItem {
   text        String
   description String?
   order       Int                @default(0)
+  /** "item" = trackable checklist row; "header" = non-clickable section divider that does not count toward completion. */
+  kind        String             @default("item")
   createdAt   DateTime           @default(now())
   position    Position           @relation(fields: [positionId], references: [id], onDelete: Cascade)
   progress    TrainingProgress[]

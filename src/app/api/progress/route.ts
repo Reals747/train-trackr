@@ -45,6 +45,7 @@ export async function GET(request: Request) {
         id: item.id,
         text: item.text,
         description: item.description,
+        kind: item.kind,
         completed: progress?.completed ?? false,
         trainerName: progress?.trainerName ?? null,
         notes: progress?.notes ?? null,
@@ -72,6 +73,9 @@ export async function POST(request: Request) {
   });
   if (!item || item.position.storeId !== user.storeId) {
     return errorResponse("Checklist item not found", 404);
+  }
+  if (item.kind === "header") {
+    return errorResponse("Section headers cannot be marked as complete", 400);
   }
 
   const progress = await prisma.trainingProgress.upsert({

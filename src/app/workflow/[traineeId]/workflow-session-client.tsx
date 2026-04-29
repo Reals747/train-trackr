@@ -35,6 +35,8 @@ type ProgressItem = {
   id: string;
   text: string;
   description: string | null;
+  /** "header" rows are non-interactive section dividers and never count toward completion. */
+  kind?: "item" | "header";
   completed: boolean;
   trainerName: string | null;
   notes: string | null;
@@ -334,6 +336,16 @@ export function WorkflowSessionClient({
         )}
         <div className="space-y-2">
           {progressItems.map((item) => {
+            if (item.kind === "header") {
+              return (
+                <div
+                  key={item.id}
+                  className="rounded-lg border border-slate-300 bg-slate-200/70 px-3 py-2 text-sm font-semibold uppercase tracking-wide text-slate-800 dark:border-slate-500 dark:bg-slate-700/70 dark:text-slate-100"
+                >
+                  {item.text}
+                </div>
+              );
+            }
             return (
               <div
                 key={item.id}
