@@ -1,7 +1,28 @@
 import rolesConfig from "@/config/roles.json";
 
 /** Role names mirror the Prisma `Role` enum. Kept as strings so this module is safe on the client. */
-export type RoleName = "OWNER" | "ADMIN" | "TRAINER" | "VIEWER";
+export type RoleName = "WEBSITE_DEVELOPER" | "OWNER" | "ADMIN" | "TRAINER" | "VIEWER";
+
+/**
+ * Roles that have manager-level reach over a store (full settings + member
+ * management). The website developer is rolled in here so that backend role
+ * filters and UI gates that previously matched OWNER/ADMIN keep working
+ * without listing every role every time.
+ */
+export const MANAGER_ROLES: RoleName[] = ["WEBSITE_DEVELOPER", "OWNER", "ADMIN"];
+
+/**
+ * Roles that should never be demoted or removed by anyone, even an owner.
+ * The website developer sits at the top — only the developer themselves can
+ * change their own account, and even then we block role changes server-side.
+ */
+export const UNTOUCHABLE_ROLES: RoleName[] = ["WEBSITE_DEVELOPER"];
+
+/**
+ * Roles that are intentionally hidden from the role-promotion dropdown so
+ * regular admins/owners never see "Website developer" as an option.
+ */
+export const HIDDEN_ASSIGNABLE_ROLES: RoleName[] = ["WEBSITE_DEVELOPER"];
 
 export type Permission =
   | "settings.account"

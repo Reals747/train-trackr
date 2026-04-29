@@ -81,7 +81,7 @@ type DashboardRow = {
   positionDetails: DashboardPositionDetail[];
 };
 type ActivityLog = { id: string; message: string; actor: string; createdAt: string };
-type AuthMode = "login" | "register-admin" | "register-trainer";
+type AuthMode = "login" | "register-admin" | "register-trainer" | "set-password";
 type SettingsCategory =
   | "account"
   | "store"
@@ -747,7 +747,7 @@ export default function Home() {
       <header className="rounded-xl bg-card p-4 shadow-sm">
         <div className="flex items-center justify-between gap-3">
           <div>
-            <h1 className="text-2xl font-bold">Training Tracker</h1>
+            <h1 className="text-2xl font-bold">Train Trackr</h1>
             <p className="text-sm opacity-75">{user.storeName} - {user.name} ({user.role})</p>
           </div>
           <div className="flex gap-2">
@@ -921,9 +921,12 @@ export default function Home() {
       {tab === "settings" && (
         <SettingsPanel
           user={user}
+          setUser={setUser}
           accountDetails={accountDetails}
+          setAccountDetails={setAccountDetails}
           storeDetails={storeDetails}
           teamMembers={teamMembers}
+          setTeamMembers={setTeamMembers}
           positions={positions}
           setPositions={setPositions}
           dashboard={dashboard}
@@ -1088,7 +1091,11 @@ function AuthScreen({
     setCreateTrainerDialog(null);
     setCreateTrainerAccountError("");
     /** Reset the 8-digit entry whenever we enter a mode that uses it. */
-    if (mode === "register-trainer" || (mode === "login" && loginAs === "trainer")) {
+    if (
+      mode === "register-trainer" ||
+      mode === "set-password" ||
+      (mode === "login" && loginAs === "trainer")
+    ) {
       setStoreCodeSlots(Array.from({ length: 8 }, () => ""));
     }
   }, [mode, loginAs]);
@@ -1106,7 +1113,9 @@ function AuthScreen({
   }, [createTrainerDialog]);
 
   const needsStoreCode =
-    mode === "register-trainer" || (mode === "login" && loginAs === "trainer");
+    mode === "register-trainer" ||
+    mode === "set-password" ||
+    (mode === "login" && loginAs === "trainer");
 
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -1150,6 +1159,16 @@ function AuthScreen({
             },
           ] as const;
         }
+        if (mode === "set-password") {
+          return [
+            "/api/auth/set-password",
+            {
+              storeCode,
+              username: formData.get("username"),
+              password: formData.get("password"),
+            },
+          ] as const;
+        }
         return [
           "/api/auth/register-trainer",
           {
@@ -1187,6 +1206,7 @@ function AuthScreen({
   const submitLabel = (() => {
     if (mode === "register-admin") return "Create store";
     if (mode === "register-trainer") return "Create trainer account";
+    if (mode === "set-password") return "Create password & sign in";
     return "Sign in";
   })();
 
@@ -1263,8 +1283,19 @@ function AuthScreen({
         className="relative z-10 w-full rounded-xl bg-card p-5 shadow-sm"
         autoComplete="on"
       >
-        <h1 className="text-2xl font-bold">Training Tracker</h1>
-        <p className="mb-4 text-sm opacity-75">Mobile-first training for fast shifts.</p>
+        <h1 className="text-2xl font-bold">Train Trackr</h1>
+        <p className="mb-4 text-sm opacity-75">Developed by Liam Powers</p>
+
+        {mode === "set-password" && (
+          <div className="mb-4 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-500/50 dark:bg-amber-950/30 dark:text-amber-200">
+            <p className="font-semibold">Set a password for your account</p>
+            <p className="mt-1 opacity-90">
+              Use this if you were promoted to admin from a trainer account and don&apos;t have
+              a password yet. Enter your username, the 8-digit store code, and a new password.
+              You&apos;ll be signed in right away and can use that password from now on.
+            </p>
+          </div>
+        )}
 
         {mode === "login" && (
           <div
@@ -1274,8 +1305,8 @@ function AuthScreen({
           >
             {(
               [
-                ["owner", "Owner / Admin"],
-                ["trainer", "Trainer"],
+                ["owner", "Sign in"],
+                ["trainer", "Invited Code"],
               ] as const
             ).map(([key, label]) => (
               <button
@@ -1338,11 +1369,19 @@ function AuthScreen({
           autoComplete="username"
         />
 
-        {(mode === "register-admin" || (mode === "login" && loginAs === "owner")) && (
+        {(mode === "register-admin" ||
+          mode === "set-password" ||
+          (mode === "login" && loginAs === "owner")) && (
           <input
             name="password"
             type="password"
-            placeholder={mode === "login" ? "Password" : "Password (min 8)"}
+            placeholder={
+              mode === "login"
+                ? "Password"
+                : mode === "set-password"
+                  ? "Create new password (min 8)"
+                  : "Password (min 8)"
+            }
             className="mb-2 w-full rounded-lg border p-3 text-base"
             required
             minLength={mode === "login" ? 1 : 8}
@@ -1379,6 +1418,12 @@ function AuthScreen({
               Create a new store (owner)
             </button>
           )}
+          {/*
+            "Create new account" (register-trainer) is intentionally hidden
+            from the auth screen. Trainers should be invited via the store's
+            8-digit code through the in-app invite flow, not self-register
+            from the public login page. Re-enable by uncommenting if the
+            self-serve trainer flow comes back.
           {mode !== "register-trainer" && (
             <button
               type="button"
@@ -1386,6 +1431,19 @@ function AuthScreen({
               onClick={() => setMode("register-trainer")}
             >
               Create new account
+            </button>
+          )}
+          */}
+          {mode === "login" && loginAs === "owner" && (
+            <button
+              type="button"
+              className="min-h-12 w-full touch-manipulation rounded-lg px-2 py-3 text-base underline underline-offset-2"
+              onClick={() => {
+                onError("");
+                setMode("set-password");
+              }}
+            >
+              Help, I don&apos;t have a password!
             </button>
           )}
         </div>
@@ -3068,9 +3126,12 @@ function EditTraineeModal({
 
 function SettingsPanel({
   user,
+  setUser,
   accountDetails,
+  setAccountDetails,
   storeDetails,
   teamMembers,
+  setTeamMembers,
   positions,
   setPositions,
   dashboard,
@@ -3085,9 +3146,12 @@ function SettingsPanel({
   onLogout,
 }: {
   user: AppUser;
+  setUser: Dispatch<SetStateAction<AppUser | null>>;
   accountDetails: AccountDetails | null;
+  setAccountDetails: Dispatch<SetStateAction<AccountDetails | null>>;
   storeDetails: StoreDetails | null;
   teamMembers: TeamMember[];
+  setTeamMembers: Dispatch<SetStateAction<TeamMember[]>>;
   positions: Position[];
   setPositions: Dispatch<SetStateAction<Position[]>>;
   dashboard: DashboardRow[];
@@ -3127,6 +3191,28 @@ function SettingsPanel({
   const [traineePendingDelete, setTraineePendingDelete] = useState<DashboardRow | null>(null);
   const [traineePendingEdit, setTraineePendingEdit] = useState<DashboardRow | null>(null);
   const [savingTraineeId, setSavingTraineeId] = useState<string | null>(null);
+  /** Self-or-manager rename of a team-member display name. `username` is never changed. */
+  const [editingMember, setEditingMember] = useState<{ id: string; name: string } | null>(null);
+  const [editMemberErr, setEditMemberErr] = useState("");
+  /**
+   * Per-member optimistic name overrides (memberId → new name) used while a rename
+   * PATCH is in-flight. The parent polls `/api/settings/trainers` every 5s and
+   * overwrites `teamMembers`, so we render `(override ?? teamMembers[i].name)`
+   * to make the new name stick until the backend has committed it. Each entry is
+   * cleared on success (after we commit the value into `teamMembers`) or on
+   * failure (causing the UI to fall back to the server value, i.e. roll back).
+   * This map also drives the "Updating…" indicator.
+   */
+  const [pendingNameOverrides, setPendingNameOverrides] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    if (!editingMember) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setEditingMember(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [editingMember]);
 
   const categories: SettingsCategory[] = [
     "account",
@@ -3457,18 +3543,71 @@ function SettingsPanel({
                   server is running the latest Prisma client.
                 </p>
               )}
-              {teamMembers.map((member) => {
+              {teamMembers.map((rawMember) => {
+                /**
+                 * If a rename PATCH is in-flight, render the optimistic name from
+                 * `pendingNameOverrides` instead of the (possibly stale) value from
+                 * `teamMembers`. The parent re-polls every 5s and would otherwise
+                 * clobber our optimistic update mid-flight.
+                 */
+                const optimisticName = pendingNameOverrides[rawMember.id];
+                const member: TeamMember =
+                  optimisticName !== undefined
+                    ? { ...rawMember, name: optimisticName }
+                    : rawMember;
+                const isUpdating = optimisticName !== undefined;
                 const isSelf = member.id === user.id;
                 const isOwner = member.role === "OWNER";
-                const roleLocked = isSelf || isOwner;
+                const isWebsiteDeveloper = member.role === "WEBSITE_DEVELOPER";
+                /**
+                 * The role <select> + remove button are locked for:
+                 *   - yourself (can't demote/remove self),
+                 *   - the store owner (server rejects this anyway),
+                 *   - the website developer (server-untouchable).
+                 */
+                const roleLocked = isSelf || isOwner || isWebsiteDeveloper;
+                /**
+                 * Name edit visibility:
+                 * - You can always edit your own name.
+                 * - Managers (members.updateRole permission) can edit anyone — except
+                 *   only the owner can edit the owner's name.
+                 */
+                const canEditName =
+                  isSelf ||
+                  (allow("members.updateRole") &&
+                    (member.role !== "OWNER" || effectiveRole === "OWNER"));
                 return (
                 <div key={member.id} className="rounded-lg border p-3">
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div>
-                      <p className="font-semibold">
-                        {member.name}
+                      <p className="flex items-center gap-2 font-semibold">
+                        <span>{member.name}</span>
                         {isSelf && (
-                          <span className="ml-2 text-xs font-normal opacity-70">(you)</span>
+                          <span className="text-xs font-normal opacity-70">(you)</span>
+                        )}
+                        {canEditName && (
+                          <button
+                            type="button"
+                            aria-label={
+                              isSelf ? "Edit your name" : `Edit name for ${member.name}`
+                            }
+                            title={isSelf ? "Edit your name" : `Edit name for ${member.name}`}
+                            className="inline-flex items-center justify-center rounded p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-800 dark:text-slate-400 dark:hover:bg-slate-700 dark:hover:text-slate-100"
+                            onClick={() => {
+                              setEditMemberErr("");
+                              setEditingMember({ id: member.id, name: member.name });
+                            }}
+                          >
+                            <PencilIcon className="h-4 w-4" />
+                          </button>
+                        )}
+                        {isUpdating && (
+                          <span
+                            className="text-xs font-normal italic opacity-70"
+                            aria-live="polite"
+                          >
+                            Updating…
+                          </span>
                         )}
                       </p>
                       <p>@{member.username}</p>
@@ -3486,7 +3625,16 @@ function SettingsPanel({
                         className={`flex flex-col gap-1 text-xs font-medium ${roleLocked ? "opacity-50" : "opacity-80"}`}
                       >
                         Role
-                        {isOwner ? (
+                        {isWebsiteDeveloper ? (
+                          /*
+                           * Website developer is a fixed, server-untouchable role.
+                           * No <select> at all — render only the label so it can't
+                           * be hovered/keyboard-clicked into a no-op interaction.
+                           */
+                          <span className="min-w-[10rem] rounded-lg border bg-card px-3 py-2 text-sm text-foreground">
+                            {roleLabel("WEBSITE_DEVELOPER")}
+                          </span>
+                        ) : isOwner ? (
                           <span className="min-w-[10rem] rounded-lg border bg-card px-3 py-2 text-sm text-foreground">
                             {roleLabel("OWNER")}
                           </span>
@@ -3548,7 +3696,9 @@ function SettingsPanel({
                           ? "Remove Trainer"
                           : member.role === "OWNER"
                             ? "Remove owner"
-                            : "Remove admin"}
+                            : member.role === "WEBSITE_DEVELOPER"
+                              ? "Remove developer"
+                              : "Remove admin"}
                       </button>
                       {isSelf && (
                         <p className="max-w-[14rem] text-right text-xs text-neutral-500 dark:text-neutral-400">
@@ -3558,6 +3708,11 @@ function SettingsPanel({
                       {isOwner && !isSelf && (
                         <p className="max-w-[14rem] text-right text-xs text-neutral-500 dark:text-neutral-400">
                           The store owner cannot be reassigned or removed here.
+                        </p>
+                      )}
+                      {isWebsiteDeveloper && !isSelf && (
+                        <p className="max-w-[14rem] text-right text-xs text-neutral-500 dark:text-neutral-400">
+                          The website developer cannot be reassigned or removed.
                         </p>
                       )}
                     </div>
@@ -3706,6 +3861,145 @@ function SettingsPanel({
           }}
         />
       )}
+      {editingMember &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 p-4"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="edit-member-name-title"
+            onMouseDown={(e) => {
+              if (e.target === e.currentTarget) setEditingMember(null);
+            }}
+          >
+            <form
+              className="w-full max-w-md rounded-xl border bg-card p-5 shadow-lg"
+              onMouseDown={(e) => e.stopPropagation()}
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (!editingMember) return;
+                const trimmed = editingMember.name.trim();
+                if (trimmed.length < 1) {
+                  setEditMemberErr("Name is required.");
+                  return;
+                }
+                if (trimmed.length > 100) {
+                  setEditMemberErr("Name must be 100 characters or fewer.");
+                  return;
+                }
+                const memberId = editingMember.id;
+                const previous = teamMembers.find((m) => m.id === memberId);
+                if (!previous) {
+                  setEditMemberErr("Member not found.");
+                  return;
+                }
+                if (trimmed === previous.name) {
+                  setEditingMember(null);
+                  return;
+                }
+                setEditMemberErr("");
+                setEditingMember(null);
+
+                /*
+                 * Optimistic update flow:
+                 *   1. Modal closes immediately.
+                 *   2. Stash the optimistic name in `pendingNameOverrides[memberId]`. The
+                 *      render loop reads from this map first, so the new name is visible
+                 *      INSTANTLY and survives the background 5s refetch poll that would
+                 *      otherwise reset `teamMembers` to the (still-old) server value.
+                 *   3. Also update `user` (header nav) for self-edits — `refreshCore`
+                 *      doesn't touch `user.name`, so this is safe to set right away.
+                 *   4. Fire the PATCH. On success, commit the new name into the parent's
+                 *      `teamMembers` / `accountDetails` and THEN clear the override (so
+                 *      no flicker between override-cleared and next-poll). On failure,
+                 *      just clear the override → UI falls back to `teamMembers`'s value
+                 *      (the original old name), and roll back `user` for self-edits.
+                 */
+                setPendingNameOverrides((prev) => ({ ...prev, [memberId]: trimmed }));
+                if (memberId === user.id) {
+                  setUser((prev) => (prev ? { ...prev, name: trimmed } : prev));
+                }
+
+                api(`/api/settings/trainers/${memberId}`, {
+                  method: "PATCH",
+                  body: JSON.stringify({ name: trimmed }),
+                })
+                  .then(() => {
+                    setTeamMembers((prev) =>
+                      prev.map((m) => (m.id === memberId ? { ...m, name: trimmed } : m)),
+                    );
+                    if (memberId === user.id) {
+                      setAccountDetails((prevAcc) =>
+                        prevAcc && prevAcc.id === memberId
+                          ? { ...prevAcc, name: trimmed }
+                          : prevAcc,
+                      );
+                    }
+                    setPendingNameOverrides((prev) => {
+                      if (!(memberId in prev)) return prev;
+                      const next = { ...prev };
+                      delete next[memberId];
+                      return next;
+                    });
+                  })
+                  .catch((err) => {
+                    if (memberId === user.id) {
+                      setUser((prevUser) =>
+                        prevUser ? { ...prevUser, name: previous.name } : prevUser,
+                      );
+                    }
+                    setTeamActionError(`Rename failed: ${(err as Error).message}`);
+                    setPendingNameOverrides((prev) => {
+                      if (!(memberId in prev)) return prev;
+                      const next = { ...prev };
+                      delete next[memberId];
+                      return next;
+                    });
+                  });
+              }}
+            >
+              <h3 id="edit-member-name-title" className="mb-3 text-lg font-semibold">
+                Edit name
+              </h3>
+              <p className="mb-3 text-xs opacity-70">
+                Username @{teamMembers.find((m) => m.id === editingMember.id)?.username ?? ""}
+                {" "}stays the same — only the display name changes.
+              </p>
+              <label className="mb-1 block text-sm font-medium">Name</label>
+              <input
+                autoFocus
+                value={editingMember.name}
+                onChange={(e) =>
+                  setEditingMember((prev) => (prev ? { ...prev, name: e.target.value } : prev))
+                }
+                placeholder="Display name"
+                className="mb-3 w-full rounded-lg border bg-background p-3"
+              />
+              {editMemberErr && <p className="mb-3 text-sm text-rose-600">{editMemberErr}</p>}
+              <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  className="rounded-lg border px-4 py-2 text-sm font-medium"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setEditingMember(null);
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="btn-accent rounded-lg px-4 py-2 text-sm font-medium"
+                >
+                  Save
+                </button>
+              </div>
+            </form>
+          </div>,
+          document.body,
+        )}
     </section>
   );
 }

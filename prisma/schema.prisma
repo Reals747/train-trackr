@@ -8,6 +8,9 @@ datasource db {
 }
 
 enum Role {
+  /// Privileged developer account. Full access to every action; cannot be demoted or removed.
+  /// Assigned by hand (see prisma/scripts/apply-website-developer-role.ts), never via the UI.
+  WEBSITE_DEVELOPER
   OWNER
   ADMIN
   TRAINER

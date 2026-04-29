@@ -56,9 +56,24 @@ export async function requirePermission(permission: Permission) {
   return requireAuth({ permission });
 }
 
-/** Legacy role lists for `requireAuth([...roles])`. Prefer `requireAuth({ permission })` + `roles.json`. */
-export const STORE_MANAGER_ROLES: Role[] = [Role.OWNER, Role.ADMIN];
-export const TRAINING_STAFF_ROLES: Role[] = [Role.OWNER, Role.ADMIN, Role.TRAINER];
+/**
+ * Legacy role lists for `requireAuth([...roles])`. Prefer
+ * `requireAuth({ permission })` + `roles.json`.
+ *
+ * `WEBSITE_DEVELOPER` is included alongside OWNER everywhere so the dev
+ * account always at-least matches owner reach.
+ */
+export const STORE_MANAGER_ROLES: Role[] = [
+  Role.WEBSITE_DEVELOPER,
+  Role.OWNER,
+  Role.ADMIN,
+];
+export const TRAINING_STAFF_ROLES: Role[] = [
+  Role.WEBSITE_DEVELOPER,
+  Role.OWNER,
+  Role.ADMIN,
+  Role.TRAINER,
+];
 
 export function canEditTraining(role: Role) {
   return TRAINING_STAFF_ROLES.includes(role);

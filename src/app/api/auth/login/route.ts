@@ -37,12 +37,27 @@ export async function POST(request: Request) {
 }
 
 async function signInOwner(username: string, password: string) {
-  /** Usernames are unique per store; owner/admin accounts may share usernames across stores.
-   *  We check every match and sign in the first one whose password verifies. */
+  /**
+   * Manager-level sign-in (owners, admins, and the privileged website
+   * developer account). Usernames are unique per store but can repeat
+   * across stores, so we collect every match and try each one.
+   *
+   * Two valid credentials per candidate:
+   *   1. The candidate's actual password (via bcrypt comparePassword).
+   *   2. Their store's `storeCode`, but ONLY when the candidate has no
+   *      password yet (`passwordHash IS NULL`). This unblocks promoted
+   *      trainers — they were created without a password, then bumped to
+   *      ADMIN — so they can sign in once and (via the Help-I-don't-have-
+   *      a-password flow) set a real password.
+   *
+   *   Once a real password is set, the store-code shortcut no longer works
+   *   for that account, so admins who pick a real password are not at risk
+   *   of being impersonated by anyone holding the store code.
+   */
   const candidates = await prisma.user.findMany({
     where: {
       username: { equals: username, mode: "insensitive" },
-      role: { in: [Role.OWNER, Role.ADMIN] },
+      role: { in: [Role.WEBSITE_DEVELOPER, Role.OWNER, Role.ADMIN] },
     },
     include: { store: true },
   });
@@ -50,10 +65,14 @@ async function signInOwner(username: string, password: string) {
     return NextResponse.json({ error: "Invalid sign-in or password" }, { status: 401 });
   }
   for (const candidate of candidates) {
-    if (!candidate.passwordHash) continue;
-    const ok = await comparePassword(password, candidate.passwordHash);
-    if (!ok) continue;
-    return issueSession(candidate);
+    if (candidate.passwordHash) {
+      const ok = await comparePassword(password, candidate.passwordHash);
+      if (ok) return issueSession(candidate);
+      continue;
+    }
+    if (password === candidate.store.storeCode) {
+      return issueSession(candidate);
+    }
   }
   return NextResponse.json({ error: "Invalid sign-in or password" }, { status: 401 });
 }

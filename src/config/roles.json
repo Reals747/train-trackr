@@ -1,4 +1,31 @@
 {
+  "WEBSITE_DEVELOPER": {
+    "label": "Website developer",
+    "description": "Privileged developer account. Full access to every store/role action. Cannot be demoted or removed by anyone.",
+    "permissions": [
+      "settings.account",
+      "settings.appearance",
+      "settings.store.view",
+      "settings.store.rename",
+      "settings.store.delete",
+      "settings.trainingSetup",
+      "settings.trainers",
+      "members.view",
+      "members.invite",
+      "members.updateRole",
+      "members.remove",
+      "announcements.post",
+      "announcements.delete",
+      "announcements.comment",
+      "trainees.create",
+      "trainees.update",
+      "trainees.delete",
+      "workflow.edit",
+      "activity.view",
+      "positions.manage",
+      "checklistItems.manage"
+    ]
+  },
   "OWNER": {
     "label": "Owner",
     "description": "Store creator. Cannot be demoted or removed.",
