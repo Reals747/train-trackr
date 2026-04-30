@@ -312,6 +312,24 @@ function TrashIcon({ className }: { className?: string }) {
   );
 }
 
+function WarningTriangleIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      className={className ?? "h-6 w-6 shrink-0"}
+      aria-hidden
+    >
+      <path
+        fillRule="evenodd"
+        d="M9.401 3.003c1.155-2 4.043-2 5.197 0l7.355 12.748c1.154 2-.577 4.5-2.598 4.5H4.645c-2.022 0-3.752-2.5-2.598-4.5L9.401 3.003zM12 8.25a.75.75 0 01.75.75v3.75a.75.75 0 01-1.5 0V9a.75.75 0 01.75-.75zm0 8.25a.75.75 0 100-1.5.75.75 0 000 1.5z"
+        clipRule="evenodd"
+      />
+    </svg>
+  );
+}
+
 /** Vertical 6-dot drag handle for sortable list rows. */
 function DragHandleIcon({ className }: { className?: string }) {
   return (
@@ -2402,11 +2420,12 @@ function PositionTrainingRow({
               className="mb-2 w-full rounded-lg border p-2"
               required
             />
-            <input
+            <textarea
               value={itemDesc}
               onChange={(e) => setItemDesc(e.target.value)}
               placeholder="Description (optional)"
               className="mb-2 w-full rounded-lg border p-2"
+              rows={3}
             />
             {itemErr && <p className="mb-2 text-xs text-rose-600">{itemErr}</p>}
             <button type="submit" className="btn-accent rounded-lg px-3 py-1.5 text-sm">
@@ -2600,7 +2619,7 @@ function PositionTrainingRow({
               {editingItem.kind !== "header" && (
                 <>
                   <label className="mb-1 block text-sm font-medium">Description (optional)</label>
-                  <input
+                  <textarea
                     value={editingItem.description}
                     onChange={(e) =>
                       setEditingItem((prev) =>
@@ -2609,6 +2628,7 @@ function PositionTrainingRow({
                     }
                     placeholder="Description (optional)"
                     className="mb-3 w-full rounded-lg border bg-background p-3"
+                    rows={3}
                   />
                 </>
               )}
@@ -2779,7 +2799,7 @@ function SortableChecklistItemRow({
           <>
             <span className="block">{item.text}</span>
             {item.description && (
-              <span className="mt-0.5 block text-xs opacity-70">{item.description}</span>
+              <span className="mt-0.5 block whitespace-pre-wrap text-xs opacity-70">{item.description}</span>
             )}
           </>
         )}
@@ -2918,9 +2938,12 @@ function DeleteStoreConfirmModal({
         className="w-full max-w-md rounded-xl border bg-card p-5 shadow-xl"
         onMouseDown={(e) => e.stopPropagation()}
       >
-        <h3 id="delete-store-dialog-title" className="mb-2 text-lg font-semibold text-rose-900 dark:text-rose-200">
-          Delete this store?
-        </h3>
+        <div className="mb-2 flex items-start gap-2">
+          <WarningTriangleIcon className="mt-0.5 h-7 w-7 shrink-0 text-amber-500" />
+          <h3 id="delete-store-dialog-title" className="text-lg font-semibold text-rose-900 dark:text-rose-200">
+            Delete this store?
+          </h3>
+        </div>
         <p className="mb-4 text-sm text-foreground">
           This permanently deletes the store and everything in it (users, positions, trainees, progress,
           announcements). You cannot undo this.
@@ -2959,6 +2982,127 @@ function DeleteStoreConfirmModal({
             onClick={() => void onConfirmDeletion()}
           >
             {busy ? "Deleting…" : "Confirm deletion"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+type StoreCodeKickScope = "trainers_only" | "trainers_and_admins";
+
+function ResetStoreCodeConfirmModal({
+  currentStoreCode,
+  confirmText,
+  onConfirmTextChange,
+  kickScope,
+  onKickScopeChange,
+  busy,
+  error,
+  onClose,
+  onConfirmReset,
+}: {
+  currentStoreCode: string;
+  confirmText: string;
+  onConfirmTextChange: (v: string) => void;
+  kickScope: StoreCodeKickScope;
+  onKickScopeChange: (v: StoreCodeKickScope) => void;
+  busy: boolean;
+  error: string;
+  onClose: () => void;
+  onConfirmReset: () => void | Promise<void>;
+}) {
+  const digitsOnly = confirmText.replace(/\D/g, "").slice(0, 8);
+  const codeMatches =
+    currentStoreCode.length === 8 && digitsOnly === currentStoreCode;
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !busy) onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose, busy]);
+
+  const kickSummary =
+    kickScope === "trainers_only"
+      ? "All trainers will be permanently removed from this store. Admins keep their accounts. The store owner always keeps access."
+      : "All trainers and admins will be permanently removed. Only the store owner will remain. Removed users lose access immediately.";
+
+  return (
+    <div
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="reset-store-code-title"
+      onMouseDown={(e) => {
+        if (busy) return;
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div
+        className="w-full max-w-md rounded-xl border bg-card p-5 shadow-xl"
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        <div className="mb-3 flex items-start gap-2">
+          <WarningTriangleIcon className="mt-0.5 h-7 w-7 text-amber-500" />
+          <h3 id="reset-store-code-title" className="text-lg font-semibold text-rose-900 dark:text-rose-200">
+            Reset store code?
+          </h3>
+        </div>
+        <p className="mb-3 text-sm text-foreground">
+          Use this only after a security incident where someone may have obtained your store join code. A new
+          code will be generated. Share the new code only with people who should still have access.
+        </p>
+        <p className="mb-3 text-sm font-medium text-foreground">{kickSummary}</p>
+        <label className="mb-1 block text-xs font-medium uppercase tracking-wide opacity-70">
+          Who to remove from this store
+        </label>
+        <select
+          value={kickScope}
+          onChange={(e) => onKickScopeChange(e.target.value as StoreCodeKickScope)}
+          disabled={busy}
+          className="mb-4 w-full rounded-lg border border-slate-200 bg-card p-3 text-foreground dark:border-slate-600"
+        >
+          <option value="trainers_only">Kick only trainers</option>
+          <option value="trainers_and_admins">Kick trainers and admins</option>
+        </select>
+        <p className="mb-2 text-sm">
+          To confirm, type the <strong className="font-semibold">current</strong> store code exactly:
+        </p>
+        <p className="mb-3 rounded-lg border bg-slate-100 px-3 py-2 font-mono text-lg tracking-[0.25em] dark:bg-slate-800">
+          {currentStoreCode || "(unknown)"}
+        </p>
+        <label className="mb-1 block text-xs font-medium uppercase tracking-wide opacity-70">
+          Current store code
+        </label>
+        <input
+          autoFocus
+          inputMode="numeric"
+          autoComplete="off"
+          maxLength={8}
+          value={confirmText}
+          onChange={(e) => onConfirmTextChange(e.target.value.replace(/\D/g, "").slice(0, 8))}
+          placeholder="8-digit code"
+          className="mb-3 w-full rounded-lg border bg-background p-3 font-mono tracking-widest"
+        />
+        {error && <p className="mb-3 text-sm text-rose-600">{error}</p>}
+        <div className="flex flex-wrap justify-end gap-2">
+          <button
+            type="button"
+            className="rounded-lg border px-4 py-2 text-sm font-medium"
+            disabled={busy}
+            onClick={onClose}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-medium text-white hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-40"
+            disabled={!codeMatches || busy}
+            onClick={() => void onConfirmReset()}
+          >
+            {busy ? "Resetting…" : "Confirm reset"}
           </button>
         </div>
       </div>
@@ -3186,6 +3330,12 @@ function SettingsPanel({
   const [deleteStoreModalOpen, setDeleteStoreModalOpen] = useState(false);
   const [deleteStoreNameConfirm, setDeleteStoreNameConfirm] = useState("");
   const [deleteStoreBusy, setDeleteStoreBusy] = useState(false);
+  const [resetStoreCodeModalOpen, setResetStoreCodeModalOpen] = useState(false);
+  const [resetStoreCodeConfirm, setResetStoreCodeConfirm] = useState("");
+  const [resetStoreCodeKickScope, setResetStoreCodeKickScope] =
+    useState<StoreCodeKickScope>("trainers_only");
+  const [resetStoreCodeBusy, setResetStoreCodeBusy] = useState(false);
+  const [resetStoreCodeErr, setResetStoreCodeErr] = useState("");
   const [traineeActionError, setTraineeActionError] = useState("");
   const [deletingTraineeId, setDeletingTraineeId] = useState<string | null>(null);
   const [traineePendingDelete, setTraineePendingDelete] = useState<DashboardRow | null>(null);
@@ -3325,7 +3475,92 @@ function SettingsPanel({
 
               {canDeleteStore && (
                 <div className="mt-4 rounded-lg border border-rose-300 bg-rose-50 p-3 text-sm text-rose-900 dark:border-rose-500/40 dark:bg-rose-500/10 dark:text-rose-200">
-                  <p className="mb-2 font-semibold">Danger zone</p>
+                  <div className="mb-2 flex items-start gap-2">
+                    <WarningTriangleIcon className="mt-0.5 h-5 w-5 shrink-0 text-amber-600 dark:text-amber-400" />
+                    <p className="font-semibold">Security reset</p>
+                  </div>
+                  <p className="mb-2">
+                    If someone obtained your store join code, rotate the code and remove selected staff in
+                    one step. Trainers sign in with this code—after a reset, share the new code only with
+                    trusted people. This cannot be undone.
+                  </p>
+                  <button
+                    type="button"
+                    className="rounded-lg border border-rose-400 bg-white px-4 py-2 text-sm font-medium text-rose-900 hover:bg-rose-100 dark:border-rose-400/50 dark:bg-rose-950/40 dark:text-rose-100 dark:hover:bg-rose-950/70"
+                    onClick={() => {
+                      setResetStoreCodeErr("");
+                      setResetStoreCodeConfirm("");
+                      setResetStoreCodeKickScope("trainers_only");
+                      setResetStoreCodeModalOpen(true);
+                    }}
+                  >
+                    Edit store code
+                  </button>
+
+                  {resetStoreCodeModalOpen && (
+                    <ResetStoreCodeConfirmModal
+                      currentStoreCode={storeDetails?.storeCode ?? user.storeCode ?? ""}
+                      confirmText={resetStoreCodeConfirm}
+                      onConfirmTextChange={setResetStoreCodeConfirm}
+                      kickScope={resetStoreCodeKickScope}
+                      onKickScopeChange={setResetStoreCodeKickScope}
+                      busy={resetStoreCodeBusy}
+                      error={resetStoreCodeErr}
+                      onClose={() => {
+                        setResetStoreCodeModalOpen(false);
+                        setResetStoreCodeConfirm("");
+                        setResetStoreCodeErr("");
+                      }}
+                      onConfirmReset={async () => {
+                        const expected = (storeDetails?.storeCode ?? user.storeCode ?? "").trim();
+                        const typed = resetStoreCodeConfirm.trim();
+                        if (expected.length !== 8 || typed !== expected) {
+                          setResetStoreCodeErr("The code you entered does not match the current store code.");
+                          return;
+                        }
+                        setResetStoreCodeErr("");
+                        setResetStoreCodeBusy(true);
+                        try {
+                          const res = await api<{ store: { storeCode: string; name: string } }>(
+                            "/api/settings/reset-store-code",
+                            {
+                              method: "POST",
+                              body: JSON.stringify({
+                                currentStoreCode: typed,
+                                kickScope: resetStoreCodeKickScope,
+                              }),
+                            },
+                          );
+                          setResetStoreCodeModalOpen(false);
+                          setResetStoreCodeConfirm("");
+                          setUser((prev) =>
+                            prev
+                              ? {
+                                  ...prev,
+                                  storeCode: res.store.storeCode,
+                                  storeName: res.store.name,
+                                }
+                              : null,
+                          );
+                          await refreshCore();
+                          await onSessionRefresh();
+                        } catch (error) {
+                          setResetStoreCodeErr((error as Error).message);
+                        } finally {
+                          setResetStoreCodeBusy(false);
+                        }
+                      }}
+                    />
+                  )}
+                </div>
+              )}
+
+              {canDeleteStore && (
+                <div className="mt-4 rounded-lg border border-rose-300 bg-rose-50 p-3 text-sm text-rose-900 dark:border-rose-500/40 dark:bg-rose-500/10 dark:text-rose-200">
+                  <div className="mb-2 flex items-start gap-2">
+                    <WarningTriangleIcon className="mt-0.5 h-5 w-5 shrink-0 text-amber-600 dark:text-amber-400" />
+                    <p className="font-semibold">Danger zone</p>
+                  </div>
                   <p className="mb-2">
                     Deleting the store permanently removes the store and all users,
                     positions, trainees, progress, and announcements. This cannot be undone.
