@@ -371,7 +371,9 @@ export function WorkflowSessionClient({
                   </span>
                   <span className="flex-1">
                     <strong>{item.text}</strong>
-                    {item.description && <p className="text-sm opacity-70">{item.description}</p>}
+                    {item.description && (
+                      <p className="whitespace-pre-wrap text-sm opacity-70">{item.description}</p>
+                    )}
                     {item.completedAt && (
                       <p className="text-xs opacity-70">
                         {item.trainerName} • {formatDateTime(item.completedAt)}
