@@ -107,13 +107,19 @@ export async function PATCH(
       role: true,
       createdAt: true,
       trainerInviteCodeUsed: true,
+      passwordHash: true,
     },
   });
 
   return NextResponse.json({
     member: {
-      ...updated,
+      id: updated.id,
+      name: updated.name,
+      username: updated.username,
+      role: updated.role,
       createdAt: updated.createdAt.toISOString(),
+      trainerInviteCodeUsed: updated.trainerInviteCodeUsed,
+      hasPassword: Boolean(updated.passwordHash),
     },
   });
 }

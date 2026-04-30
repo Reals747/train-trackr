@@ -21,6 +21,7 @@ export async function GET() {
       role: true,
       createdAt: true,
       trainerInviteCodeUsed: true,
+      passwordHash: true,
     },
     orderBy: { createdAt: "desc" },
   });
@@ -33,6 +34,7 @@ export async function GET() {
       role: m.role,
       createdAt: m.createdAt.toISOString(),
       trainerInviteCodeUsed: m.trainerInviteCodeUsed,
+      hasPassword: Boolean(m.passwordHash),
     })),
   });
 }

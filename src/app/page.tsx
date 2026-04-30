@@ -113,6 +113,7 @@ type TeamMember = {
   role: Role;
   createdAt: string;
   trainerInviteCodeUsed: string | null;
+  hasPassword: boolean;
 };
 type AppearanceSettings = {
   darkMode: boolean;
@@ -727,9 +728,19 @@ export default function Home() {
     return () => clearInterval(interval);
   }, [user, refreshCore]);
 
+  const isTraineeChecklistComplete = useCallback((row: DashboardRow) => row.percentage >= 100, []);
+
   const filteredDashboard = useMemo(
-    () => dashboard.filter((row) => row.name.toLowerCase().includes(search.toLowerCase())),
-    [dashboard, search],
+    () =>
+      dashboard
+        .filter((row) => row.name.toLowerCase().includes(search.toLowerCase()))
+        .sort((a, b) => {
+          const aDone = isTraineeChecklistComplete(a);
+          const bDone = isTraineeChecklistComplete(b);
+          if (aDone === bDone) return 0;
+          return aDone ? 1 : -1;
+        }),
+    [dashboard, search, isTraineeChecklistComplete],
   );
 
   const dashboardModalRow = useMemo(
@@ -858,23 +869,35 @@ export default function Home() {
               onChange={(e) => setSearch(e.target.value)}
             />
             <div className="space-y-3">
-              {filteredDashboard.map((row) => (
-                <button
-                  key={row.id}
-                  type="button"
-                  className="w-full rounded-lg border p-3 text-left transition hover:bg-slate-50 focus-visible:outline focus-visible:ring-2 focus-visible:ring-slate-400 dark:hover:bg-slate-800/60"
-                  onClick={() => setDashboardModalTraineeId(row.id)}
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <strong>{row.name}</strong>
-                    <span className="shrink-0 text-sm font-semibold">{row.percentage}%</span>
-                  </div>
-                  <p className="text-sm">
-                    Completed {row.positionsFullyComplete}/{row.storePositionCount} Remaining{" "}
-                    {row.remainingPositions}
-                  </p>
-                </button>
-              ))}
+              {filteredDashboard.map((row) => {
+                const isComplete = isTraineeChecklistComplete(row);
+                return (
+                  <button
+                    key={row.id}
+                    type="button"
+                    className={`w-full rounded-lg border p-3 text-left transition focus-visible:outline focus-visible:ring-2 focus-visible:ring-slate-400 ${
+                      isComplete
+                        ? "border-emerald-200/70 bg-emerald-50/45 text-slate-500 dark:border-emerald-900/40 dark:bg-emerald-950/25 dark:text-slate-300"
+                        : "hover:bg-slate-50 dark:hover:bg-slate-800/60"
+                    }`}
+                    onClick={() => setDashboardModalTraineeId(row.id)}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <strong className="flex items-center gap-2">
+                        <span>{row.name}</span>
+                        {isComplete && (
+                          <span className="text-xs italic font-normal opacity-80">Trained</span>
+                        )}
+                      </strong>
+                      <span className="shrink-0 text-sm font-semibold">{row.percentage}%</span>
+                    </div>
+                    <p className="text-sm">
+                      Completed {row.positionsFullyComplete}/{row.storePositionCount} Remaining{" "}
+                      {row.remainingPositions}
+                    </p>
+                  </button>
+                );
+              })}
             </div>
           </section>
         </>
@@ -3354,6 +3377,12 @@ function SettingsPanel({
    * This map also drives the "Updating…" indicator.
    */
   const [pendingNameOverrides, setPendingNameOverrides] = useState<Record<string, string>>({});
+  const [selfPasswordFormOpenForId, setSelfPasswordFormOpenForId] = useState<string | null>(null);
+  const [selfPasswordDraft, setSelfPasswordDraft] = useState("");
+  const [selfPasswordConfirmDraft, setSelfPasswordConfirmDraft] = useState("");
+  const [selfPasswordBusy, setSelfPasswordBusy] = useState(false);
+  const [selfPasswordError, setSelfPasswordError] = useState("");
+  const [selfPasswordSuccess, setSelfPasswordSuccess] = useState("");
 
   useEffect(() => {
     if (!editingMember) return;
@@ -3725,7 +3754,7 @@ function SettingsPanel({
                   onChange={(e) => setAppearance((prev) => ({ ...prev, accent: e.target.value }))}
                 />
               </label>
-              <label className={`flex items-center justify-between gap-2 ${!appearanceReady ? "pointer-events-none opacity-50" : ""}`}>
+              {/* <label className={`flex items-center justify-between gap-2 ${!appearanceReady ? "pointer-events-none opacity-50" : ""}`}>
                 <span>Compact cards</span>
                 <input
                   type="checkbox"
@@ -3735,7 +3764,7 @@ function SettingsPanel({
                     setAppearance((prev) => ({ ...prev, compactCards: !prev.compactCards }))
                   }
                 />
-              </label>
+              </label> */}
               <p className="text-xs opacity-70">
                 Saved for your account and synced across devices when you’re signed in.
               </p>
@@ -3794,6 +3823,9 @@ function SettingsPanel({
                 const isSelf = member.id === user.id;
                 const isOwner = member.role === "OWNER";
                 const isWebsiteDeveloper = member.role === "WEBSITE_DEVELOPER";
+                const isAdmin = member.role === "ADMIN";
+                const canSetOwnInitialPassword = isAdmin && isSelf && !member.hasPassword;
+                const isSelfPasswordFormOpen = selfPasswordFormOpenForId === member.id;
                 /**
                  * The role <select> + remove button are locked for:
                  *   - yourself (can't demote/remove self),
@@ -3846,14 +3878,116 @@ function SettingsPanel({
                         )}
                       </p>
                       <p>@{member.username}</p>
-                      {member.role === "TRAINER" && (
-                        <p>
-                          Invite code used: {member.trainerInviteCodeUsed ?? "—"}
-                        </p>
-                      )}
                       <p className="opacity-70">
                         Joined {formatDateTime(member.createdAt)}
                       </p>
+                      {isAdmin && (
+                        <p className="opacity-70">
+                          Password: {member.hasPassword ? "Set" : "Not set"}
+                        </p>
+                      )}
+                      {canSetOwnInitialPassword && (
+                        <div className="mt-2 space-y-2">
+                          {!isSelfPasswordFormOpen ? (
+                            <button
+                              type="button"
+                              className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-medium hover:bg-slate-100 dark:border-slate-600 dark:hover:bg-slate-700"
+                              onClick={() => {
+                                setSelfPasswordFormOpenForId(member.id);
+                                setSelfPasswordError("");
+                                setSelfPasswordSuccess("");
+                                setSelfPasswordDraft("");
+                                setSelfPasswordConfirmDraft("");
+                              }}
+                            >
+                              Set account password
+                            </button>
+                          ) : (
+                            <form
+                              className="space-y-2 rounded-lg border border-slate-200 p-2 dark:border-slate-700"
+                              onSubmit={async (e) => {
+                                e.preventDefault();
+                                setSelfPasswordError("");
+                                setSelfPasswordSuccess("");
+                                if (selfPasswordDraft.length < 8) {
+                                  setSelfPasswordError("Password must be at least 8 characters.");
+                                  return;
+                                }
+                                if (selfPasswordDraft !== selfPasswordConfirmDraft) {
+                                  setSelfPasswordError("Passwords do not match.");
+                                  return;
+                                }
+                                setSelfPasswordBusy(true);
+                                try {
+                                  await api("/api/settings/account/password", {
+                                    method: "POST",
+                                    body: JSON.stringify({ password: selfPasswordDraft }),
+                                  });
+                                  setSelfPasswordSuccess("Password set.");
+                                  setSelfPasswordFormOpenForId(null);
+                                  setSelfPasswordDraft("");
+                                  setSelfPasswordConfirmDraft("");
+                                  await refreshCore();
+                                } catch (err) {
+                                  setSelfPasswordError((err as Error).message);
+                                } finally {
+                                  setSelfPasswordBusy(false);
+                                }
+                              }}
+                            >
+                              <input
+                                type="password"
+                                value={selfPasswordDraft}
+                                onChange={(e) => setSelfPasswordDraft(e.target.value)}
+                                className="w-full rounded-lg border border-slate-200 bg-card px-2 py-1 text-xs text-foreground dark:border-slate-600"
+                                placeholder="New password (min 8)"
+                                autoComplete="new-password"
+                                disabled={selfPasswordBusy}
+                              />
+                              <input
+                                type="password"
+                                value={selfPasswordConfirmDraft}
+                                onChange={(e) => setSelfPasswordConfirmDraft(e.target.value)}
+                                className="w-full rounded-lg border border-slate-200 bg-card px-2 py-1 text-xs text-foreground dark:border-slate-600"
+                                placeholder="Confirm password"
+                                autoComplete="new-password"
+                                disabled={selfPasswordBusy}
+                              />
+                              <div className="flex gap-2">
+                                <button
+                                  type="submit"
+                                  disabled={selfPasswordBusy}
+                                  className="btn-accent rounded-lg px-3 py-1 text-xs font-medium disabled:opacity-60"
+                                >
+                                  {selfPasswordBusy ? "Saving..." : "Save password"}
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={selfPasswordBusy}
+                                  className="rounded-lg border border-slate-300 px-3 py-1 text-xs font-medium hover:bg-slate-100 dark:border-slate-600 dark:hover:bg-slate-700"
+                                  onClick={() => {
+                                    setSelfPasswordFormOpenForId(null);
+                                    setSelfPasswordError("");
+                                    setSelfPasswordSuccess("");
+                                    setSelfPasswordDraft("");
+                                    setSelfPasswordConfirmDraft("");
+                                  }}
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            </form>
+                          )}
+                          {isSelf && selfPasswordError && (
+                            <p className="text-xs text-rose-600">{selfPasswordError}</p>
+                          )}
+                          {isSelf && selfPasswordSuccess && (
+                            <p className="text-xs text-emerald-600 dark:text-emerald-400">
+                              {selfPasswordSuccess}
+                            </p>
+                          )}
+                        </div>
+                      )}
                     </div>
                     <div className="flex flex-col gap-2 sm:items-end">
                       <label
