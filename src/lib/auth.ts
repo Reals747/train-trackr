@@ -4,7 +4,9 @@ import jwt from "jsonwebtoken";
 import { cookies } from "next/headers";
 
 const COOKIE_NAME = "training_tracker_token";
-const EXPIRES_IN = "12h";
+
+/** Seconds; JWT exp and cookie maxAge must match. Capped ~400d — browsers (e.g. Chrome) reject longer cookie lifetimes. */
+const SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 400;
 
 export type AuthPayload = {
   userId: string;
@@ -31,7 +33,7 @@ export async function comparePassword(password: string, hash: string) {
 }
 
 export function signToken(payload: AuthPayload) {
-  return jwt.sign(payload, getJwtSecret(), { expiresIn: EXPIRES_IN });
+  return jwt.sign(payload, getJwtSecret(), { expiresIn: SESSION_MAX_AGE_SECONDS });
 }
 
 export function verifyToken(token: string): AuthPayload {
@@ -56,7 +58,7 @@ export async function setAuthCookie(token: string) {
     sameSite: "lax",
     secure: process.env.NODE_ENV === "production",
     path: "/",
-    maxAge: 60 * 60 * 12,
+    maxAge: SESSION_MAX_AGE_SECONDS,
   });
 }
 
