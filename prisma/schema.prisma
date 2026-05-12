@@ -90,16 +90,17 @@ model StoreSetting {
 }
 
 model Position {
-  id         String          @id @default(cuid())
-  storeId    String
-  name       String
-  hidden     Boolean         @default(false)
+  id              String                      @id @default(cuid())
+  storeId         String
+  name            String
+  hidden          Boolean                     @default(false)
   /** Manual sort order within a store; 0-based ascending. Backfilled from alphabetical name on first migration. */
-  order      Int             @default(0)
-  createdAt  DateTime        @default(now())
-  store      Store           @relation(fields: [storeId], references: [id], onDelete: Cascade)
-  items      ChecklistItem[]
-  trainees   TraineePosition[]
+  order           Int                         @default(0)
+  createdAt       DateTime                    @default(now())
+  store           Store                       @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  items           ChecklistItem[]
+  trainees        TraineePosition[]
+  workflowComments WorkflowGeneralComments[]
 
   @@unique([storeId, name])
   @@index([storeId, order])
@@ -119,16 +120,29 @@ model ChecklistItem {
 }
 
 model Trainee {
-  id         String             @id @default(cuid())
-  storeId    String
-  name       String
-  startDate  DateTime
-  createdAt  DateTime           @default(now())
-  store      Store              @relation(fields: [storeId], references: [id], onDelete: Cascade)
-  positions  TraineePosition[]
-  progress   TrainingProgress[]
+  id               String                    @id @default(cuid())
+  storeId          String
+  name             String
+  startDate        DateTime
+  createdAt        DateTime                  @default(now())
+  store            Store                     @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  positions        TraineePosition[]
+  progress         TrainingProgress[]
+  workflowComments WorkflowGeneralComments[]
 
   @@index([storeId, name])
+}
+
+/** Free-form workflow notes for a trainee on a given checklist position (not tied to assignment rows). */
+model WorkflowGeneralComments {
+  traineeId       String
+  positionId      String
+  generalComments String   @default("")
+  updatedAt       DateTime @updatedAt
+  trainee         Trainee  @relation(fields: [traineeId], references: [id], onDelete: Cascade)
+  position        Position @relation(fields: [positionId], references: [id], onDelete: Cascade)
+
+  @@id([traineeId, positionId])
 }
 
 model TraineePosition {

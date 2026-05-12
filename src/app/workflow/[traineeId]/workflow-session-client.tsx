@@ -5,7 +5,7 @@ import { formatDateTime } from "@/lib/format-datetime";
 import { can, type RoleName } from "@/lib/permissions";
 import LoadingScreen from "@/components/LoadingScreen";
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 type AppUser = {
   id: string;
@@ -92,11 +92,20 @@ export function WorkflowSessionClient({
   const [progressItems, setProgressItems] = useState<ProgressItem[]>([]);
   const [progressLoading, setProgressLoading] = useState(false);
   const [pendingSaves, setPendingSaves] = useState(0);
+  const [generalComments, setGeneralComments] = useState("");
+  const [generalCommentsLoading, setGeneralCommentsLoading] = useState(false);
+  const [commentsLoaded, setCommentsLoaded] = useState(false);
+  const [commentsSaveError, setCommentsSaveError] = useState("");
+  const [pendingCommentSave, setPendingCommentSave] = useState(false);
+  const lastSavedComments = useRef("");
+  const generalCommentsRef = useRef("");
   const [systemPrefersDark, setSystemPrefersDark] = useState(() =>
     typeof window !== "undefined" ? window.matchMedia("(prefers-color-scheme: dark)").matches : false,
   );
 
   const canTrain = user ? can(user.role, "workflow.edit") : false;
+
+  generalCommentsRef.current = generalComments;
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -202,6 +211,81 @@ export function WorkflowSessionClient({
     void refreshProgress();
   }, [refreshProgress]);
 
+  useEffect(() => {
+    if (!selectedPositionId) {
+      setGeneralComments("");
+      lastSavedComments.current = "";
+      setCommentsLoaded(false);
+      setGeneralCommentsLoading(false);
+      setCommentsSaveError("");
+      return;
+    }
+    let cancelled = false;
+    setGeneralCommentsLoading(true);
+    setCommentsSaveError("");
+    void (async () => {
+      try {
+        const res = await clientApi<{ generalComments: string }>(
+          `/api/workflow-general-comments?traineeId=${encodeURIComponent(traineeId)}&positionId=${encodeURIComponent(selectedPositionId)}`,
+        );
+        if (cancelled) return;
+        setGeneralComments(res.generalComments);
+        lastSavedComments.current = res.generalComments;
+        setCommentsLoaded(true);
+      } catch (err) {
+        if (!cancelled) {
+          setGeneralComments("");
+          lastSavedComments.current = "";
+          setCommentsLoaded(false);
+          setCommentsSaveError(
+            err instanceof Error && err.message
+              ? err.message
+              : "Could not load general comments.",
+          );
+        }
+      } finally {
+        if (!cancelled) setGeneralCommentsLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [traineeId, selectedPositionId]);
+
+  useEffect(() => {
+    if (!selectedPositionId || !commentsLoaded || !canTrain) return;
+    const live = generalCommentsRef.current;
+    if (live === lastSavedComments.current) return;
+
+    const timer = window.setTimeout(() => {
+      const snapshot = generalCommentsRef.current;
+      if (snapshot === lastSavedComments.current) return;
+      void (async () => {
+        setPendingCommentSave(true);
+        setCommentsSaveError("");
+        try {
+          await clientApi("/api/workflow-general-comments", {
+            method: "PUT",
+            body: JSON.stringify({
+              traineeId,
+              positionId: selectedPositionId,
+              generalComments: snapshot,
+            }),
+          });
+          lastSavedComments.current = snapshot;
+        } catch (err) {
+          setCommentsSaveError(
+            err instanceof Error ? err.message : "Could not save general comments.",
+          );
+        } finally {
+          setPendingCommentSave(false);
+        }
+      })();
+    }, 900);
+
+    return () => window.clearTimeout(timer);
+  }, [generalComments, selectedPositionId, commentsLoaded, canTrain, traineeId]);
+
   /**
    * Optimistically toggle a checklist item's completion state.
    *
@@ -277,19 +361,29 @@ export function WorkflowSessionClient({
     <main
       className={`mx-auto flex min-h-screen w-full max-w-5xl flex-col gap-4 p-3 sm:p-6 ${appearance.compactCards ? "gap-2 p-2 sm:p-4" : ""}`}
     >
-      <header className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0 flex-1">
-          <h1 className="text-2xl font-bold">{row?.name ?? "Trainee"}</h1>
-          {row && (
-            <p className="mt-1 text-sm opacity-80">
-              {row.percentage}% complete · Completed {row.positionsFullyComplete}/{row.storePositionCount} positions ·
-              Remaining {row.remainingPositions}
-            </p>
-          )}
-          {loadError && !row && <p className="mt-2 text-sm text-rose-600">{loadError}</p>}
+      <header className="flex flex-col gap-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0 flex-1">
+            <h1 className="text-2xl font-bold">{row?.name ?? "Trainee"}</h1>
+            {row && (
+              <p className="mt-1 text-sm opacity-80">
+                {row.percentage}% complete · Completed {row.positionsFullyComplete}/{row.storePositionCount} positions ·
+                Remaining {row.remainingPositions}
+              </p>
+            )}
+            {loadError && !row && <p className="mt-2 text-sm text-rose-600">{loadError}</p>}
+          </div>
+          <Link
+            href="/"
+            className="shrink-0 rounded-lg border border-slate-200 bg-slate-100 px-3 py-2 text-sm font-medium text-slate-900 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100"
+          >
+            Back to app
+          </Link>
+        </div>
 
-          <div className="mt-3 flex max-w-md flex-col gap-2">
-            <label htmlFor="workflow-session-position" className="sr-only">
+        <div className="grid gap-4 md:grid-cols-2 md:items-start">
+          <div className="flex max-w-md flex-col gap-2 md:max-w-none">
+            <label htmlFor="workflow-session-position" className="text-sm font-medium text-foreground">
               Position
             </label>
             <select
@@ -306,13 +400,37 @@ export function WorkflowSessionClient({
               ))}
             </select>
           </div>
+          <div className="flex min-h-0 flex-col gap-2">
+            <label htmlFor="workflow-general-comments" className="text-sm font-medium text-foreground">
+              General comments
+            </label>
+            <textarea
+              id="workflow-general-comments"
+              rows={4}
+              value={generalComments}
+              onChange={(e) => {
+                setCommentsSaveError("");
+                setGeneralComments(e.target.value);
+              }}
+              readOnly={!selectedPositionId || !canTrain || generalCommentsLoading}
+              disabled={!selectedPositionId || generalCommentsLoading}
+              placeholder={
+                selectedPositionId
+                  ? canTrain
+                    ? "Notes for this trainee on this position…"
+                    : "View-only: only trainers with edit access can add comments."
+                  : "Select a position to add comments."
+              }
+              className="min-h-[7.5rem] w-full resize-y rounded-lg border border-slate-200 bg-card p-3 text-sm text-foreground placeholder:text-slate-400 focus-visible:outline focus-visible:ring-2 focus-visible:ring-slate-400 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-600 dark:placeholder:text-slate-500"
+            />
+            {pendingCommentSave && (
+              <p className="text-xs opacity-70" role="status" aria-live="polite">
+                Saving comments…
+              </p>
+            )}
+            {commentsSaveError && <p className="text-xs text-rose-600">{commentsSaveError}</p>}
+          </div>
         </div>
-        <Link
-          href="/"
-          className="shrink-0 rounded-lg border border-slate-200 bg-slate-100 px-3 py-2 text-sm font-medium text-slate-900 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100"
-        >
-          Back to app
-        </Link>
       </header>
 
       <section className="rounded-xl bg-card p-4 shadow-sm">

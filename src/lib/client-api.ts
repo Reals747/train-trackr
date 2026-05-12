@@ -5,8 +5,12 @@ export async function clientApi<T>(url: string, init?: RequestInit): Promise<T> 
     headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
   });
   if (!response.ok) {
-    const body = (await response.json().catch(() => ({}))) as { error?: string };
-    throw new Error(body.error || "Request failed");
+    const body = (await response.json().catch(() => ({}))) as {
+      error?: string;
+      prismaCode?: string;
+    };
+    const msg = body.error || "Request failed";
+    throw new Error(body.prismaCode ? `${msg} (${body.prismaCode})` : msg);
   }
   return response.json() as Promise<T>;
 }

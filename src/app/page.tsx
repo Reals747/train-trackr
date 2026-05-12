@@ -432,6 +432,10 @@ function PositionChecklistStatusTag({ status }: { status: DashboardPositionDetai
   return _exhaustive;
 }
 
+type TraineeModalCommentsState =
+  | { kind: "ok"; entries: { positionId: string; positionName: string; generalComments: string }[] }
+  | { kind: "error"; message: string };
+
 function TraineeDashboardModal({
   row,
   onClose,
@@ -439,11 +443,37 @@ function TraineeDashboardModal({
   row: DashboardRow;
   onClose: () => void;
 }) {
+  const [panel, setPanel] = useState<"progress" | "comments">("progress");
+  const [commentsState, setCommentsState] = useState<TraineeModalCommentsState | null>(null);
+  const [commentsRetry, setCommentsRetry] = useState(0);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const visiblePositionDetails = useMemo(
     () => row.positionDetails.filter((p) => !p.hidden),
     [row.positionDetails],
   );
+
+  useEffect(() => {
+    if (panel !== "comments") return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await api<{ entries: { positionId: string; positionName: string; generalComments: string }[] }>(
+          `/api/workflow-general-comments/for-trainee?traineeId=${encodeURIComponent(row.id)}`,
+        );
+        if (!cancelled) setCommentsState({ kind: "ok", entries: res.entries });
+      } catch (e) {
+        if (!cancelled) {
+          setCommentsState({
+            kind: "error",
+            message: e instanceof Error ? e.message : "Could not load comments",
+          });
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [panel, row.id, commentsRetry]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -474,76 +504,136 @@ function TraineeDashboardModal({
               positions · Remaining {row.remainingPositions}
             </p>
           </div>
-          <button
-            type="button"
-            className="shrink-0 rounded-lg border px-3 py-1.5 text-sm font-medium hover:bg-slate-100 dark:hover:bg-slate-700"
-            onClick={onClose}
-          >
-            Close
-          </button>
+          <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+            {panel === "progress" ? (
+              <button
+                type="button"
+                className="rounded-lg border px-3 py-1.5 text-sm font-medium hover:bg-slate-100 dark:hover:bg-slate-700"
+                onClick={() => {
+                  setCommentsState(null);
+                  setPanel("comments");
+                }}
+              >
+                View comments
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="rounded-lg border px-3 py-1.5 text-sm font-medium hover:bg-slate-100 dark:hover:bg-slate-700"
+                onClick={() => setPanel("progress")}
+              >
+                View progress
+              </button>
+            )}
+            <button
+              type="button"
+              className="rounded-lg border px-3 py-1.5 text-sm font-medium hover:bg-slate-100 dark:hover:bg-slate-700"
+              onClick={onClose}
+            >
+              Close
+            </button>
+          </div>
         </div>
 
-        <p className="mb-3 text-sm opacity-80">
-          Visible store positions are listed below. Hidden positions are omitted. Expand a
-          position to see each checklist item.
-        </p>
-
-        <div className="space-y-2">
-          {visiblePositionDetails.length === 0 ? (
-            <p className="rounded-lg border p-3 text-sm opacity-80">
-              No visible positions for this store.
+        {panel === "progress" ? (
+          <>
+            <p className="mb-3 text-sm opacity-80">
+              Store positions are listed below. Expand a position to see each checklist item.
             </p>
-          ) : null}
-          {visiblePositionDetails.map((pos) => {
-            const isOpen = expanded[pos.positionId];
-            return (
-              <div key={pos.positionId} className="rounded-lg border text-sm">
-                <button
-                  type="button"
-                  className="flex w-full flex-nowrap items-center gap-x-2 overflow-x-auto overflow-y-hidden px-3 py-2 text-left font-medium [-webkit-overflow-scrolling:touch] sm:flex-wrap sm:overflow-visible"
-                  onClick={() =>
-                    setExpanded((e) => ({ ...e, [pos.positionId]: !e[pos.positionId] }))
-                  }
-                  aria-expanded={isOpen}
-                >
-                  <ChevronDisclosureIcon
-                    expanded={isOpen}
-                    className="size-[16px] shrink-0 opacity-60"
-                  />
-                  <span className="min-w-0 flex-1 truncate">{pos.name}</span>
-                  <span className="ml-auto flex shrink-0 flex-nowrap items-center justify-end gap-1.5">
-                    <span className="shrink-0 rounded border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs font-medium tabular-nums text-slate-700 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200">
-                      {pos.completedItems}/{pos.totalItems}
-                    </span>
-                    <PositionChecklistStatusTag status={pos.status} />
-                  </span>
-                </button>
 
-                {isOpen && (
-                  <div className="space-y-2 border-t border-slate-200 px-3 py-3 dark:border-slate-600">
-                    {pos.items.length === 0 ? (
-                      <p className="text-xs opacity-70">No checklist items for this position.</p>
-                    ) : (
-                      <ul className="space-y-2">
-                        {pos.items.map((item) => (
-                          <li key={item.id} className="flex items-start gap-2">
-                            <ChecklistCheckboxIcon
-                              completed={item.completed}
-                              className="mt-0.5 h-[20px] w-[20px] shrink-0"
-                            />
-                            <span className={item.completed ? "text-foreground" : "opacity-90"}>
-                              {item.text}
-                            </span>
-                          </li>
-                        ))}
-                      </ul>
+            <div className="space-y-2">
+              {visiblePositionDetails.length === 0 ? (
+                <p className="rounded-lg border p-3 text-sm opacity-80">
+                  No visible positions for this store.
+                </p>
+              ) : null}
+              {visiblePositionDetails.map((pos) => {
+                const isOpen = expanded[pos.positionId];
+                return (
+                  <div key={pos.positionId} className="rounded-lg border text-sm">
+                    <button
+                      type="button"
+                      className="flex w-full flex-nowrap items-center gap-x-2 overflow-x-auto overflow-y-hidden px-3 py-2 text-left font-medium [-webkit-overflow-scrolling:touch] sm:flex-wrap sm:overflow-visible"
+                      onClick={() =>
+                        setExpanded((e) => ({ ...e, [pos.positionId]: !e[pos.positionId] }))
+                      }
+                      aria-expanded={isOpen}
+                    >
+                      <ChevronDisclosureIcon
+                        expanded={isOpen}
+                        className="size-[16px] shrink-0 opacity-60"
+                      />
+                      <span className="min-w-0 flex-1 truncate">{pos.name}</span>
+                      <span className="ml-auto flex shrink-0 flex-nowrap items-center justify-end gap-1.5">
+                        <span className="shrink-0 rounded border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs font-medium tabular-nums text-slate-700 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200">
+                          {pos.completedItems}/{pos.totalItems}
+                        </span>
+                        <PositionChecklistStatusTag status={pos.status} />
+                      </span>
+                    </button>
+
+                    {isOpen && (
+                      <div className="space-y-2 border-t border-slate-200 px-3 py-3 dark:border-slate-600">
+                        {pos.items.length === 0 ? (
+                          <p className="text-xs opacity-70">No checklist items for this position.</p>
+                        ) : (
+                          <ul className="space-y-2">
+                            {pos.items.map((item) => (
+                              <li key={item.id} className="flex items-start gap-2">
+                                <ChecklistCheckboxIcon
+                                  completed={item.completed}
+                                  className="mt-0.5 h-[20px] w-[20px] shrink-0"
+                                />
+                                <span className={item.completed ? "text-foreground" : "opacity-90"}>
+                                  {item.text}
+                                </span>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
                     )}
                   </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
+                );
+              })}
+            </div>
+          </>
+        ) : !commentsState ? (
+          <p className="text-sm opacity-80" role="status">
+            Loading comments…
+          </p>
+        ) : commentsState.kind === "error" ? (
+          <div className="space-y-3">
+            <p className="text-sm text-rose-600">{commentsState.message}</p>
+            <button
+              type="button"
+              className="rounded-lg border px-3 py-1.5 text-sm font-medium hover:bg-slate-100 dark:hover:bg-slate-700"
+              onClick={() => {
+                setCommentsState(null);
+                setCommentsRetry((n) => n + 1);
+              }}
+            >
+              Try again
+            </button>
+          </div>
+        ) : commentsState.entries.length === 0 ? (
+          <p className="text-sm opacity-80">
+            No saved general comments for any position yet. Comments are added from the checklist
+            workflow page.
+          </p>
+        ) : (
+          <div className="space-y-3">
+            <p className="text-sm opacity-80">Positions with saved comments (from the workflow page).</p>
+            <div className="space-y-3">
+              {commentsState.entries.map((entry) => (
+                <div key={entry.positionId} className="rounded-lg border border-slate-200 p-3 dark:border-slate-600">
+                  <h3 className="text-sm font-semibold text-foreground">{entry.positionName}</h3>
+                  <p className="mt-2 whitespace-pre-wrap text-sm opacity-90">{entry.generalComments}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -995,6 +1085,7 @@ export default function Home() {
 
       {dashboardModalRow && (
         <TraineeDashboardModal
+          key={dashboardModalRow.id}
           row={dashboardModalRow}
           onClose={() => setDashboardModalTraineeId(null)}
         />
