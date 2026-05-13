@@ -343,7 +343,7 @@ export function WorkflowSessionClient({
   }, [positions, selectedPositionId]);
 
   if (loading) {
-    return <LoadingScreen />;
+    return <LoadingScreen label="Loading checklist" />;
   }
 
   if (!user && loadError) {

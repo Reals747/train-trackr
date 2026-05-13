@@ -35,6 +35,7 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import { formatDateTime } from "@/lib/format-datetime";
 import { can, roleLabel, type Permission, type RoleName } from "@/lib/permissions";
+import LoadingScreen from "@/components/LoadingScreen";
 
 type Role = RoleName;
 type AppUser = {
@@ -666,6 +667,8 @@ function TraineeDashboardModal({
 export default function Home() {
   const router = useRouter();
   const [user, setUser] = useState<AppUser | null>(null);
+  /** False until the initial `/api/auth/me` attempt finishes (success or not). Avoids flashing the login UI while the session is still unknown. */
+  const [sessionResolved, setSessionResolved] = useState(false);
   const [error, setError] = useState<string>("");
   const [tab, setTab] = useState("dashboard");
   const [settingsCategory, setSettingsCategory] = useState<SettingsCategory>("account");
@@ -758,17 +761,21 @@ export default function Home() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
+      let authedUser: AppUser | null = null;
+      let authDone = false;
       try {
         const me = await api<{ user: AppUser }>("/api/auth/me");
-        if (cancelled) return;
-        setUser(me.user);
-        try {
-          await refreshCoreRef.current();
-        } catch {
-          /* Session is valid; partial load failure — next poll will retry. */
-        }
+        authedUser = me.user;
+        authDone = true;
       } catch {
-        if (!cancelled) setUser(null);
+        authedUser = null;
+        authDone = true;
+      }
+      if (cancelled || !authDone) return;
+      setUser(authedUser);
+      setSessionResolved(true);
+      if (authedUser) {
+        void refreshCoreRef.current().catch(() => undefined);
       }
     })();
     return () => {
@@ -883,11 +890,16 @@ export default function Home() {
     if (!canViewActivity && tab === "activity") setTab("dashboard");
   }, [canViewActivity, tab]);
 
+  if (!sessionResolved) {
+    return <LoadingScreen />;
+  }
+
   if (!user) {
     return (
       <AuthScreen
         onLoggedIn={(nextUser) => {
           setUser(nextUser);
+          void refreshCore().catch(() => undefined);
         }}
         onError={setError}
         error={error}

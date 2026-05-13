@@ -3,10 +3,11 @@
  *
  * Used automatically by the Next.js App Router via `app/loading.tsx` (and any
  * nested `loading.tsx`) during route transitions / RSC streaming. Also safe to
- * render manually from client components while waiting on data.
+ * render manually from client components while waiting on data. Default label is
+ * "Loading"; pass `label="Loading checklist"` where that wording fits better.
  */
 export default function LoadingScreen({
-  label = "Loading checklist",
+  label = "Loading",
   fullscreen = true,
 }: {
   label?: string;
