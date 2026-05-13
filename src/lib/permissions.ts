@@ -35,6 +35,7 @@ export type Permission =
   | "members.view"
   | "members.invite"
   | "members.updateRole"
+  | "members.assignOwner"
   | "members.remove"
   | "announcements.post"
   | "announcements.delete"

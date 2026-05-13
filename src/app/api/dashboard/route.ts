@@ -28,6 +28,7 @@ export async function GET() {
     }),
     prisma.position.findMany({
       where: { storeId: user.storeId },
+      orderBy: [{ order: "asc" }, { name: "asc" }],
       include: {
         // Section headers (kind: "header") are organizational only and never count
         // toward completion totals or appear in the dashboard's progress lists.
@@ -39,8 +40,9 @@ export async function GET() {
     }),
   ]);
 
+  /** Match Settings → Position Setup (manual `order`, then name). */
   const sortedStorePositions = [...storePositions].sort((a, b) => {
-    if (a.hidden !== b.hidden) return a.hidden ? 1 : -1;
+    if (a.order !== b.order) return a.order - b.order;
     return a.name.localeCompare(b.name);
   });
 

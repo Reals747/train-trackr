@@ -151,12 +151,18 @@ function SunIcon({ className }: { className?: string }) {
   return (
     <svg
       xmlns="http://www.w3.org/2000/svg"
+      fill="none"
       viewBox="0 0 24 24"
-      fill="currentColor"
+      strokeWidth={1.5}
+      stroke="currentColor"
       className={className ?? "h-5 w-5"}
       aria-hidden
     >
-      <path d="M12 2.25a.75.75 0 01.75.75v2.25a.75.75 0 01-1.5 0V3a.75.75 0 01.75-.75zM7.5 12a4.5 4.5 0 119 0 4.5 4.5 0 01-9 0zM18.894 6.166a.75.75 0 00-1.06-1.06l-1.591 1.59a.75.75 0 101.06 1.061l1.591-1.59zM21.75 12a.75.75 0 01-.75.75h-2.25a.75.75 0 010-1.5H21a.75.75 0 01.75.75zM17.834 18.894a.75.75 0 001.06-1.06l-1.59-1.591a.75.75 0 10-1.061 1.06l1.59 1.591zM12 18a.75.75 0 01.75.75V21a.75.75 0 01-1.5 0v-2.25A.75.75 0 0112 18zM7.758 17.303a.75.75 0 00-1.061-1.06l-1.591 1.59a.75.75 0 001.06 1.061l1.591-1.59zM6 12a.75.75 0 01-.75.75H3a.75.75 0 010-1.5h2.25A.75.75 0 016 12zm6.303 7.758a.75.75 0 001.06-1.06l-1.59-1.591a.75.75 0 10-1.061 1.06l1.59 1.591z" />
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M12 3v2.25m6.364.386-1.591 1.591M21 12h-2.25m-.386 6.364-1.591-1.591M12 18.75V21m-4.773-4.227-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0z"
+      />
     </svg>
   );
 }
@@ -3433,6 +3439,7 @@ function SettingsPanel({
   const canDeleteStore = allow("settings.store.delete");
   const canManageTraining = allow("settings.trainingSetup");
   const canManageMembers = allow("settings.trainers");
+  const canAssignOwner = allow("members.assignOwner");
   const canDeleteTrainees = allow("trainees.delete");
   const canCreateTrainees = allow("trainees.create");
 
@@ -3526,12 +3533,6 @@ function SettingsPanel({
               <p><strong>Username:</strong> {accountDetails?.username ?? user.username}</p>
               <p><strong>Role:</strong> {accountDetails?.role ?? user.role}</p>
               <p><strong>Store:</strong> {accountDetails?.storeName ?? user.storeName}</p>
-              <p>
-                <strong>Store Code:</strong>{" "}
-                <span className="font-mono tracking-widest">
-                  {accountDetails?.storeCode ?? user.storeCode ?? "—"}
-                </span>
-              </p>
               <p>
                 <strong>Account Created:</strong>{" "}
                 {accountDetails?.createdAt ? formatDateTime(accountDetails.createdAt) : "-"}
@@ -3741,110 +3742,190 @@ function SettingsPanel({
                 <p className="text-xs opacity-70">Loading your saved appearance…</p>
               )}
               {(() => {
-                const effectiveDark = appearance.followSystemTheme
-                  ? systemPrefersDark
-                  : appearance.darkMode;
-                const switchShowsDark = appearance.followSystemTheme
-                  ? systemPrefersDark
-                  : appearance.darkMode;
-                const manualLocked = !appearanceReady || appearance.followSystemTheme;
+                const themeChoice: "light" | "dark" | "system" = appearance.followSystemTheme
+                  ? "system"
+                  : appearance.darkMode
+                    ? "dark"
+                    : "light";
+                const caption =
+                  themeChoice === "light"
+                    ? "Light mode"
+                    : themeChoice === "dark"
+                      ? "Dark mode"
+                      : "Follow system setting";
+                const themeDisabled = !appearanceReady;
                 return (
                   <div
-                    className={`flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4 ${!appearanceReady ? "pointer-events-none opacity-50" : ""}`}
+                    className={`flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-6 ${themeDisabled ? "pointer-events-none opacity-50" : ""}`}
                   >
-                    <span className="font-medium">
-                      {effectiveDark ? "Dark mode" : "Light mode"}
-                    </span>
-                    <button
-                      type="button"
-                      role="switch"
-                      aria-checked={switchShowsDark}
-                      aria-label={effectiveDark ? "Dark mode" : "Light mode"}
-                      disabled={manualLocked}
-                      onClick={() =>
-                        setAppearance((prev) => ({ ...prev, darkMode: !prev.darkMode }))
-                      }
-                      className={`relative h-10 w-[4.5rem] shrink-0 overflow-hidden rounded-full border-2 transition-colors max-sm:h-9 max-sm:w-16 ${
-                        manualLocked
-                          ? "cursor-not-allowed opacity-45"
-                          : "cursor-pointer touch-manipulation"
-                      } ${
-                        switchShowsDark
-                          ? "border-indigo-500/60 bg-indigo-950/40"
-                          : "border-amber-300/80 bg-amber-50 dark:border-amber-700/50 dark:bg-amber-950/30"
-                      }`}
-                    >
-                      <span
-                        className={`absolute top-1 left-1 z-20 flex h-8 w-8 items-center justify-center rounded-full bg-white shadow-md ring-1 ring-black/5 transition-transform duration-200 ease-out dark:bg-slate-800 dark:ring-white/10 max-sm:top-0.5 max-sm:left-0.5 max-sm:h-7 max-sm:w-7 ${
-                          switchShowsDark
-                            ? "translate-x-[2rem] max-sm:translate-x-[1.75rem]"
-                            : "translate-x-0"
-                        }`}
+                    <span className="shrink-0 pt-1 text-base font-medium sm:pt-2.5">Theme</span>
+                    <div className="flex w-full min-w-0 flex-col items-center gap-1.5 sm:w-auto sm:items-end">
+                      <div
+                        role="radiogroup"
+                        aria-label="Theme"
+                        className="grid h-[3.25rem] w-[13.5rem] max-w-full shrink-0 grid-cols-3 gap-1 rounded-full border-2 border-slate-300 bg-slate-100 p-1.5 dark:border-slate-600 dark:bg-slate-800/90"
                       >
-                        {switchShowsDark ? (
-                          <MoonIcon className="h-4 w-4 text-indigo-600 dark:text-indigo-300 max-sm:h-3 max-sm:w-3" />
-                        ) : (
-                          <SunIcon className="h-4 w-4 text-amber-600 max-sm:h-3 max-sm:w-3" />
-                        )}
-                      </span>
-                      {/* Desktop-only track hints — hidden on small screens so icons/touches aren’t crowded */}
-                      <span className="pointer-events-none absolute inset-0 z-0 hidden items-center justify-between px-2.5 opacity-70 sm:flex">
-                        <SunIcon className="h-3.5 w-3.5 text-amber-700/90 dark:text-amber-300/90" />
-                        <MoonIcon className="h-3.5 w-3.5 text-indigo-600/90 dark:text-indigo-300/90" />
-                      </span>
-                    </button>
+                        <button
+                          type="button"
+                          role="radio"
+                          aria-checked={themeChoice === "light"}
+                          aria-label="Light mode"
+                          disabled={themeDisabled}
+                          onClick={() =>
+                            setAppearance((prev) => ({
+                              ...prev,
+                              followSystemTheme: false,
+                              darkMode: false,
+                            }))
+                          }
+                          className={`flex items-center justify-center rounded-full transition-colors ${
+                            themeChoice === "light"
+                              ? "bg-white text-amber-600 shadow ring-1 ring-black/10 dark:bg-slate-700 dark:text-amber-300 dark:ring-white/10"
+                              : "text-slate-500 hover:bg-white/60 dark:text-slate-400 dark:hover:bg-slate-700/50"
+                          }`}
+                        >
+                          <SunIcon className="h-5 w-5 max-sm:h-[1.15rem] max-sm:w-[1.15rem]" />
+                        </button>
+                        <button
+                          type="button"
+                          role="radio"
+                          aria-checked={themeChoice === "system"}
+                          aria-label="Follow system setting"
+                          disabled={themeDisabled}
+                          onClick={() =>
+                            setAppearance((prev) => ({
+                              ...prev,
+                              followSystemTheme: true,
+                              darkMode: systemPrefersDark,
+                            }))
+                          }
+                          className={`flex items-center justify-center rounded-full transition-colors ${
+                            themeChoice === "system"
+                              ? "bg-white text-slate-800 shadow ring-1 ring-black/10 dark:bg-slate-600 dark:text-slate-100 dark:ring-white/15"
+                              : "text-slate-500 hover:bg-white/60 dark:text-slate-400 dark:hover:bg-slate-700/50"
+                          }`}
+                        >
+                          <SettingsGearIcon className="h-5 w-5 max-sm:h-[1.15rem] max-sm:w-[1.15rem]" />
+                        </button>
+                        <button
+                          type="button"
+                          role="radio"
+                          aria-checked={themeChoice === "dark"}
+                          aria-label="Dark mode"
+                          disabled={themeDisabled}
+                          onClick={() =>
+                            setAppearance((prev) => ({
+                              ...prev,
+                              followSystemTheme: false,
+                              darkMode: true,
+                            }))
+                          }
+                          className={`flex items-center justify-center rounded-full transition-colors ${
+                            themeChoice === "dark"
+                              ? "bg-white text-indigo-600 shadow ring-1 ring-black/10 dark:bg-slate-700 dark:text-indigo-300 dark:ring-white/10"
+                              : "text-slate-500 hover:bg-white/60 dark:text-slate-400 dark:hover:bg-slate-700/50"
+                          }`}
+                        >
+                          <MoonIcon className="h-5 w-5 max-sm:h-[1.15rem] max-sm:w-[1.15rem]" />
+                        </button>
+                      </div>
+                      <p className="max-w-[13.5rem] text-center text-xs leading-snug opacity-80 sm:text-right">
+                        {caption}
+                      </p>
+                    </div>
                   </div>
                 );
               })()}
               <div
-                className={`ml-6 border-l-2 border-slate-200 pl-4 dark:border-slate-600 ${!appearanceReady ? "pointer-events-none opacity-50" : ""}`}
+                className={`flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-6 ${!appearanceReady ? "pointer-events-none opacity-50" : ""}`}
               >
-                <label className="flex cursor-pointer items-center justify-between gap-3">
-                  <span className="text-sm">Follow system setting</span>
-                  <input
-                    type="checkbox"
-                    className="h-5 w-5"
-                    checked={appearance.followSystemTheme}
-                    disabled={!appearanceReady}
-                    onChange={() =>
-                      setAppearance((prev) => ({
-                        ...prev,
-                        followSystemTheme: !prev.followSystemTheme,
-                      }))
-                    }
-                  />
-                </label>
-                <p className="mt-1 text-xs opacity-70">
-                  Match light or dark to your device’s current appearance. When on, the toggle above
-                  follows the system and cannot be edited.
-                </p>
+                <span className="shrink-0 pt-1 text-base font-medium sm:pt-2.5">Font size</span>
+                <div className="flex w-full min-w-0 flex-col items-center gap-1.5 sm:w-auto sm:items-end">
+                  <div
+                    role="radiogroup"
+                    aria-label="Font size"
+                    className="grid h-[3.25rem] w-[13.5rem] max-w-full shrink-0 grid-cols-4 gap-1 rounded-full border-2 border-slate-300 bg-slate-100 p-1.5 dark:border-slate-600 dark:bg-slate-800/90"
+                  >
+                    {(
+                      [
+                        { scale: 0.9, label: "Small", kind: "smallA" as const },
+                        { scale: 1, label: "Default", kind: "dot" as const },
+                        { scale: 1.1, label: "Large", kind: "dot" as const },
+                        { scale: 1.2, label: "Extra Large", kind: "bigA" as const },
+                      ] as const
+                    ).map((opt) => {
+                      const active = appearance.fontScale === opt.scale;
+                      const baseBtn =
+                        "flex items-center justify-center rounded-full transition-colors touch-manipulation";
+                      const activeBtn =
+                        "bg-white text-slate-800 shadow ring-1 ring-black/10 dark:bg-slate-600 dark:text-slate-100 dark:ring-white/15";
+                      const idleBtn =
+                        "text-slate-500 hover:bg-white/60 dark:text-slate-400 dark:hover:bg-slate-700/50";
+                      return (
+                        <button
+                          key={opt.scale}
+                          type="button"
+                          role="radio"
+                          aria-checked={active}
+                          aria-label={opt.label}
+                          disabled={!appearanceReady}
+                          onClick={() =>
+                            setAppearance((prev) => ({ ...prev, fontScale: opt.scale }))
+                          }
+                          className={`${baseBtn} ${active ? activeBtn : idleBtn}`}
+                        >
+                          {opt.kind === "smallA" ? (
+                            <span className="select-none text-sm font-semibold leading-none">A</span>
+                          ) : opt.kind === "bigA" ? (
+                            <span className="select-none text-xl font-bold leading-none tracking-tight">
+                              A
+                            </span>
+                          ) : (
+                            <span
+                              className="h-2 w-2 shrink-0 rounded-full bg-current opacity-90"
+                              aria-hidden
+                            />
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <p className="max-w-[13.5rem] text-center text-xs leading-snug opacity-80 sm:text-right">
+                    {appearance.fontScale === 0.9
+                      ? "Small"
+                      : appearance.fontScale === 1
+                        ? "Default"
+                        : appearance.fontScale === 1.1
+                          ? "Large"
+                          : "Extra Large"}
+                  </p>
+                </div>
               </div>
-              <label className={`block ${!appearanceReady ? "pointer-events-none opacity-50" : ""}`}>
-                <span>Font size</span>
-                <select
-                  className="mt-1 w-full rounded-lg border border-slate-200 bg-card p-2 text-foreground dark:border-slate-600"
-                  value={appearance.fontScale}
-                  disabled={!appearanceReady}
-                  onChange={(e) =>
-                    setAppearance((prev) => ({ ...prev, fontScale: Number(e.target.value) }))
-                  }
-                >
-                  <option value={0.9}>Small</option>
-                  <option value={1}>Default</option>
-                  <option value={1.1}>Large</option>
-                  <option value={1.2}>Extra Large</option>
-                </select>
-              </label>
-              <label className={`block ${!appearanceReady ? "pointer-events-none opacity-50" : ""}`}>
-                <span>Accent color</span>
-                <input
-                  type="color"
-                  className="mt-1 h-10 w-full rounded-lg border p-1"
-                  value={appearance.accent}
-                  disabled={!appearanceReady}
-                  onChange={(e) => setAppearance((prev) => ({ ...prev, accent: e.target.value }))}
-                />
-              </label>
+              <div
+                className={`flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-6 ${!appearanceReady ? "pointer-events-none opacity-50" : ""}`}
+              >
+                <span className="shrink-0 pt-1 text-base font-medium sm:pt-2.5">Accent color</span>
+                <div className="flex w-full min-w-0 flex-col items-center gap-1.5 sm:w-auto sm:items-end">
+                  <label className="relative flex h-[3.25rem] w-[13.5rem] max-w-full shrink-0 cursor-pointer rounded-full border-2 border-slate-300 bg-slate-100 p-1.5 dark:border-slate-600 dark:bg-slate-800/90">
+                    <input
+                      type="color"
+                      className="absolute inset-0 z-10 m-0 h-full w-full cursor-pointer border-0 p-0 opacity-0"
+                      value={appearance.accent}
+                      disabled={!appearanceReady}
+                      aria-label="Accent color"
+                      onChange={(e) => setAppearance((prev) => ({ ...prev, accent: e.target.value }))}
+                    />
+                    <div
+                      className="min-h-0 min-w-0 flex-1 rounded-full shadow ring-1 ring-black/10 dark:ring-white/10"
+                      style={{ backgroundColor: appearance.accent }}
+                      aria-hidden
+                    />
+                  </label>
+                  <p className="max-w-[13.5rem] text-center text-xs leading-snug uppercase tracking-wide opacity-80 sm:text-right">
+                    {appearance.accent}
+                  </p>
+                </div>
+              </div>
               {/* <label className={`flex items-center justify-between gap-2 ${!appearanceReady ? "pointer-events-none opacity-50" : ""}`}>
                 <span>Compact cards</span>
                 <input
@@ -4106,7 +4187,13 @@ function SettingsPanel({
                             onChange={async (e) => {
                               if (isSelf) return;
                               const next = e.target.value;
-                              if (next !== "ADMIN" && next !== "TRAINER") return;
+                              if (
+                                next !== "ADMIN" &&
+                                next !== "TRAINER" &&
+                                !(next === "OWNER" && canAssignOwner)
+                              ) {
+                                return;
+                              }
                               if (next === member.role) return;
                               setTeamActionError("");
                               try {
@@ -4123,8 +4210,9 @@ function SettingsPanel({
                               }
                             }}
                           >
-                            <option value="ADMIN">Admin</option>
-                            <option value="TRAINER">Trainer</option>
+                            {canAssignOwner && <option value="OWNER">{roleLabel("OWNER")}</option>}
+                            <option value="ADMIN">{roleLabel("ADMIN")}</option>
+                            <option value="TRAINER">{roleLabel("TRAINER")}</option>
                           </select>
                         )}
                       </label>

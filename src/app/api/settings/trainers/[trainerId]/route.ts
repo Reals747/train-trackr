@@ -7,7 +7,7 @@ import { prisma } from "@/lib/prisma";
 
 const patchSchema = z
   .object({
-    role: z.enum(["ADMIN", "TRAINER"]).optional(),
+    role: z.enum(["OWNER", "ADMIN", "TRAINER"]).optional(),
     name: z.string().trim().min(1).max(100).optional(),
   })
   .refine((value) => value.role !== undefined || value.name !== undefined, {
@@ -17,7 +17,7 @@ const patchSchema = z
 /**
  * Update a single team member.
  *
- * - Role changes still require `members.updateRole` and can't target self/owner.
+ * - Assigning the OWNER role requires `members.assignOwner` (website developer only).
  * - Name changes are allowed when the caller is the same user OR when the
  *   caller is an admin/owner whose role permits managing members. Admins
  *   cannot rename the store owner — only the owner themselves can.
@@ -54,6 +54,9 @@ export async function PATCH(
   if (parsed.data.role !== undefined) {
     if (!can(user.role, "members.updateRole")) {
       return errorResponse("Forbidden", 403);
+    }
+    if (parsed.data.role === Role.OWNER && !can(user.role, "members.assignOwner")) {
+      return errorResponse("Only the website developer can assign the owner role.", 403);
     }
     if (isSelf) {
       return errorResponse("You cannot change your own role here.", 400);
