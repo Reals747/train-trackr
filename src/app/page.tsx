@@ -142,10 +142,28 @@ type AnnouncementRow = {
 const DEFAULT_APPEARANCE: AppearanceSettings = {
   darkMode: false,
   fontScale: 1,
-  accent: "#dc2626",
+  accent: "#e51636",
   compactCards: false,
   followSystemTheme: true,
 };
+
+/** Preset accent colors (left → right). Legacy default `#dc2626` maps to Red. */
+const ACCENT_SWATCHES = [
+  { label: "Blue", hex: "#2563eb" },
+  { label: "Red", hex: "#e51636" },
+  { label: "Purple", hex: "#7c3aed" },
+  { label: "Green", hex: "#16a34a" },
+] as const;
+
+function accentMatchesSwatch(accent: string, swatch: (typeof ACCENT_SWATCHES)[number]) {
+  const a = accent.trim().toLowerCase();
+  if (swatch.hex === "#e51636" && (a === "#e51636" || a === "#dc2626")) return true;
+  return a === swatch.hex.toLowerCase();
+}
+
+function accentSwatchFromValue(accent: string) {
+  return ACCENT_SWATCHES.find((s) => accentMatchesSwatch(accent, s));
+}
 
 function SunIcon({ className }: { className?: string }) {
   return (
@@ -770,7 +788,17 @@ export default function Home() {
     (async () => {
       try {
         const res = await api<{ appearance: AppearanceSettings }>("/api/settings/appearance");
-        if (!cancelled) setAppearance(res.appearance);
+        if (!cancelled) {
+          const lo = res.appearance.accent.trim().toLowerCase();
+          const fromSwatch = ACCENT_SWATCHES.find((s) => s.hex.toLowerCase() === lo);
+          const accent =
+            lo === "#dc2626"
+              ? "#e51636"
+              : fromSwatch
+                ? fromSwatch.hex
+                : res.appearance.accent;
+          setAppearance({ ...res.appearance, accent });
+        }
       } catch {
         if (!cancelled) setAppearance(DEFAULT_APPEARANCE);
       } finally {
@@ -971,10 +999,10 @@ export default function Home() {
                   <button
                     key={row.id}
                     type="button"
-                    className={`w-full rounded-lg border p-3 text-left transition focus-visible:outline focus-visible:ring-2 focus-visible:ring-slate-400 ${
+                    className={`w-full rounded-lg p-3 text-left text-sm font-medium transition focus-visible:outline focus-visible:ring-2 focus-visible:ring-slate-400 ${
                       isComplete
-                        ? "border-emerald-200/70 bg-emerald-50/45 text-slate-500 dark:border-emerald-900/40 dark:bg-emerald-950/25 dark:text-slate-300"
-                        : "hover:bg-slate-50 dark:hover:bg-slate-800/60"
+                        ? "bg-emerald-50 text-slate-800 hover:bg-emerald-100/90 dark:bg-emerald-950/35 dark:text-slate-200 dark:hover:bg-emerald-950/50"
+                        : "bg-slate-100 text-slate-900 hover:bg-slate-200/90 dark:bg-slate-700 dark:text-slate-100 dark:hover:bg-slate-600"
                     }`}
                     onClick={() => setDashboardModalTraineeId(row.id)}
                   >
@@ -1188,7 +1216,7 @@ function DigitCodeInput({
               maxLength={1}
               value={ch}
               aria-label={`${label} digit ${i + 1} of ${length}`}
-              className="min-h-[3.5rem] h-14 w-full rounded-[inherit] border-0 bg-transparent text-center text-3xl font-semibold tabular-nums leading-none text-foreground outline-none ring-0 transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--accent,#dc2626)] focus-visible:outline-offset-[-2px] sm:min-h-[4rem] sm:h-16 sm:text-4xl"
+              className="min-h-[3.5rem] h-14 w-full rounded-[inherit] border-0 bg-transparent text-center text-3xl font-semibold tabular-nums leading-none text-foreground outline-none ring-0 transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--accent,#e51636)] focus-visible:outline-offset-[-2px] sm:min-h-[4rem] sm:h-16 sm:text-4xl"
               onChange={(e) => handleDigit(i, e.target.value)}
               onKeyDown={(e) => handleKeyDown(i, e)}
               onPaste={(e) => handlePaste(i, e)}
@@ -2186,7 +2214,7 @@ function TrainingSetupSection({
         <SortableContext items={sortedIds} strategy={verticalListSortingStrategy}>
           <div className="space-y-2">
             {sorted.length === 0 && (
-              <p className="rounded-lg border border-dashed p-6 text-center text-sm opacity-70">
+              <p className="rounded-lg bg-slate-100 p-6 text-center text-sm opacity-80 dark:bg-slate-700">
                 No positions yet. Use Create Position to add one.
               </p>
             )}
@@ -2231,6 +2259,7 @@ function PositionTrainingRow({
   const [addHeaderOpen, setAddHeaderOpen] = useState(false);
   const [addHeaderText, setAddHeaderText] = useState("");
   const [addHeaderErr, setAddHeaderErr] = useState("");
+  const [addChecklistItemOpen, setAddChecklistItemOpen] = useState(false);
 
   /** Drag-and-drop wiring: this row is itself a sortable position; items inside use a nested DndContext. */
   const {
@@ -2312,14 +2341,21 @@ function PositionTrainingRow({
     return () => window.removeEventListener("keydown", onKey);
   }, [addHeaderOpen]);
 
+  useEffect(() => {
+    if (!addChecklistItemOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setAddChecklistItemOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [addChecklistItemOpen]);
+
   return (
     <div
       ref={setPositionNodeRef}
       style={positionStyle}
-      className={`rounded-lg border text-sm ${
-        position.hidden
-          ? "border-slate-200/90 bg-slate-50/90 text-foreground/85 dark:border-slate-600/90 dark:bg-slate-900/55 dark:text-foreground/85"
-          : ""
+      className={`rounded-lg text-left text-sm bg-slate-100 dark:bg-slate-700 ${
+        position.hidden ? "text-foreground/80 dark:text-foreground/80" : ""
       } ${menuOpen ? "relative z-50" : ""}`}
     >
       <div className="flex items-center gap-2 px-3 py-2">
@@ -2350,7 +2386,7 @@ function PositionTrainingRow({
         <div className="relative shrink-0" ref={menuRef}>
           <button
             type="button"
-            className="inline-flex items-center justify-center rounded-lg border px-2 py-1 text-foreground"
+            className="inline-flex items-center justify-center rounded-lg px-2 py-1 text-slate-600 hover:bg-slate-200/80 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-600/70 dark:hover:text-slate-100"
             aria-label="Position options"
             aria-expanded={menuOpen}
             onClick={(e) => {
@@ -2440,20 +2476,6 @@ function PositionTrainingRow({
 
       {expanded && (
         <div className="space-y-3 border-t border-slate-200 px-3 py-3 dark:border-slate-600">
-          <div className="flex justify-end">
-            <button
-              type="button"
-              className="rounded-lg border border-dashed border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700"
-              onClick={() => {
-                setAddHeaderText("");
-                setAddHeaderErr("");
-                setAddHeaderOpen(true);
-              }}
-            >
-              + Add section header
-            </button>
-          </div>
-
           {position.items.length === 0 ? (
             <p className="text-xs opacity-70">No checklist items yet.</p>
           ) : (
@@ -2509,49 +2531,31 @@ function PositionTrainingRow({
             </DndContext>
           )}
 
-          <form
-            className="rounded-lg border border-dashed p-3"
-            onSubmit={async (e) => {
-              e.preventDefault();
-              setItemErr("");
-              try {
-                await api(`/api/positions/${position.id}/items`, {
-                  method: "POST",
-                  body: JSON.stringify({
-                    text: itemText,
-                    description: itemDesc || undefined,
-                  }),
-                });
+          <div className="flex flex-wrap justify-end gap-2">
+            <button
+              type="button"
+              className="rounded-lg border border-dashed border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700"
+              onClick={() => {
+                setAddHeaderText("");
+                setAddHeaderErr("");
+                setAddHeaderOpen(true);
+              }}
+            >
+              + Add section header
+            </button>
+            <button
+              type="button"
+              className="rounded-lg border border-dashed border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700"
+              onClick={() => {
                 setItemText("");
                 setItemDesc("");
-                await onRefresh();
-              } catch (error) {
-                setItemErr((error as Error).message);
-              }
-            }}
-          >
-            <p className="mb-2 text-xs font-semibold uppercase tracking-wide opacity-70">
-              Add checklist item
-            </p>
-            <input
-              value={itemText}
-              onChange={(e) => setItemText(e.target.value)}
-              placeholder="Checklist text"
-              className="mb-2 w-full rounded-lg border p-2"
-              required
-            />
-            <textarea
-              value={itemDesc}
-              onChange={(e) => setItemDesc(e.target.value)}
-              placeholder="Description (optional)"
-              className="mb-2 w-full rounded-lg border p-2"
-              rows={3}
-            />
-            {itemErr && <p className="mb-2 text-xs text-rose-600">{itemErr}</p>}
-            <button type="submit" className="btn-accent rounded-lg px-3 py-1.5 text-sm">
-              Add item
+                setItemErr("");
+                setAddChecklistItemOpen(true);
+              }}
+            >
+              + Add checklist item
             </button>
-          </form>
+          </div>
         </div>
       )}
       {renameOpen &&
@@ -2856,6 +2860,89 @@ function PositionTrainingRow({
                   className="btn-accent rounded-lg px-4 py-2 text-sm font-medium"
                 >
                   Add header
+                </button>
+              </div>
+            </form>
+          </div>,
+          document.body,
+        )}
+      {addChecklistItemOpen &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 p-4"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={`add-checklist-item-title-${position.id}`}
+            onMouseDown={(e) => {
+              if (e.target === e.currentTarget) {
+                setItemErr("");
+                setAddChecklistItemOpen(false);
+              }
+            }}
+          >
+            <form
+              className="w-full max-w-md rounded-xl border bg-card p-5 shadow-lg"
+              onMouseDown={(e) => e.stopPropagation()}
+              onSubmit={async (e) => {
+                e.preventDefault();
+                setItemErr("");
+                try {
+                  await api(`/api/positions/${position.id}/items`, {
+                    method: "POST",
+                    body: JSON.stringify({
+                      text: itemText,
+                      description: itemDesc || undefined,
+                    }),
+                  });
+                  setItemText("");
+                  setItemDesc("");
+                  setAddChecklistItemOpen(false);
+                  await onRefresh();
+                } catch (error) {
+                  setItemErr((error as Error).message);
+                }
+              }}
+            >
+              <h3
+                id={`add-checklist-item-title-${position.id}`}
+                className="mb-3 text-lg font-semibold"
+              >
+                Add checklist item
+              </h3>
+              <label className="mb-1 block text-sm font-medium">Checklist text</label>
+              <input
+                autoFocus
+                value={itemText}
+                onChange={(e) => setItemText(e.target.value)}
+                placeholder="Checklist text"
+                className="mb-3 w-full rounded-lg border bg-background p-3"
+                required
+              />
+              <label className="mb-1 block text-sm font-medium">Description (optional)</label>
+              <textarea
+                value={itemDesc}
+                onChange={(e) => setItemDesc(e.target.value)}
+                placeholder="Description (optional)"
+                className="mb-3 w-full rounded-lg border bg-background p-3"
+                rows={3}
+              />
+              {itemErr && <p className="mb-3 text-sm text-rose-600">{itemErr}</p>}
+              <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  className="rounded-lg border px-4 py-2 text-sm font-medium"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setItemErr("");
+                    setAddChecklistItemOpen(false);
+                  }}
+                >
+                  Cancel
+                </button>
+                <button type="submit" className="btn-accent rounded-lg px-4 py-2 text-sm font-medium">
+                  Add item
                 </button>
               </div>
             </form>
@@ -3444,6 +3531,7 @@ function SettingsPanel({
   const canCreateTrainees = allow("trainees.create");
 
   const [storeNameDraft, setStoreNameDraft] = useState("");
+  const [storeRenameModalOpen, setStoreRenameModalOpen] = useState(false);
   const [settingsErr, setSettingsErr] = useState("");
   const [trainerInviteModalOpen, setTrainerInviteModalOpen] = useState(false);
   const [teamActionError, setTeamActionError] = useState("");
@@ -3491,6 +3579,18 @@ function SettingsPanel({
     return () => window.removeEventListener("keydown", onKey);
   }, [editingMember]);
 
+  useEffect(() => {
+    if (!storeRenameModalOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setSettingsErr("");
+        setStoreRenameModalOpen(false);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [storeRenameModalOpen]);
+
   const categories: SettingsCategory[] = [
     "account",
     "appearance",
@@ -3529,7 +3629,35 @@ function SettingsPanel({
         <div className="rounded-lg border p-3">
           {category === "account" && (
             <div className="space-y-2 text-sm">
-              <p><strong>Name:</strong> {accountDetails?.name ?? user.name}</p>
+              <p className="flex flex-wrap items-center gap-2">
+                <strong>Name:</strong>
+                <span>
+                  {pendingNameOverrides[user.id] ?? accountDetails?.name ?? user.name}
+                </span>
+                {pendingNameOverrides[user.id] !== undefined && (
+                  <span className="text-xs font-normal italic opacity-70" aria-live="polite">
+                    Updating…
+                  </span>
+                )}
+                <button
+                  type="button"
+                  aria-label="Edit your name"
+                  title="Edit your name"
+                  className="inline-flex items-center justify-center rounded p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-800 dark:text-slate-400 dark:hover:bg-slate-700 dark:hover:text-slate-100"
+                  onClick={() => {
+                    setEditMemberErr("");
+                    setEditingMember({
+                      id: user.id,
+                      name:
+                        pendingNameOverrides[user.id] ??
+                        accountDetails?.name ??
+                        user.name,
+                    });
+                  }}
+                >
+                  <PencilIcon className="h-4 w-4" />
+                </button>
+              </p>
               <p><strong>Username:</strong> {accountDetails?.username ?? user.username}</p>
               <p><strong>Role:</strong> {accountDetails?.role ?? user.role}</p>
               <p><strong>Store:</strong> {accountDetails?.storeName ?? user.storeName}</p>
@@ -3562,32 +3690,24 @@ function SettingsPanel({
                 <strong>Trainees:</strong> {storeDetails?._count.trainees ?? 0}
               </p>
               {canRenameStore ? (
-                <form
-                  className="space-y-2"
-                  onSubmit={async (e) => {
-                    e.preventDefault();
-                    setSettingsErr("");
-                    try {
-                      await api("/api/settings/store-details", {
-                        method: "PUT",
-                        body: JSON.stringify({ name: storeNameDraft }),
-                      });
-                      await refreshCore();
-                    } catch (error) {
-                      setSettingsErr((error as Error).message);
-                    }
-                  }}
-                >
-                  <input
-                    value={storeNameDraft}
-                    onChange={(e) => setStoreNameDraft(e.target.value)}
-                    className="w-full rounded-lg border p-3"
-                    placeholder="Update store name"
-                    required
-                  />
-                  {settingsErr && <p className="text-rose-600">{settingsErr}</p>}
-                  <button className="btn-accent rounded-lg px-4 py-2">Save Store Name</button>
-                </form>
+                <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-800 dark:border-slate-600 dark:bg-slate-800/50 dark:text-slate-200">
+                  <p className="mb-2 font-semibold">Store name</p>
+                  <p className="mb-3 opacity-90">
+                    Update the name shown for this store in the app. Opening the dialog does not
+                    change anything until you save.
+                  </p>
+                  <button
+                    type="button"
+                    className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-900 hover:bg-slate-50 dark:border-slate-500 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800/80"
+                    onClick={() => {
+                      setSettingsErr("");
+                      setStoreNameDraft(storeDetails?.name ?? "");
+                      setStoreRenameModalOpen(true);
+                    }}
+                  >
+                    Change store name
+                  </button>
+                </div>
               ) : (
                 <p className="text-xs opacity-70">
                   Only the store owner can rename this store.
@@ -3906,24 +4026,50 @@ function SettingsPanel({
               >
                 <span className="shrink-0 pt-1 text-base font-medium sm:pt-2.5">Accent color</span>
                 <div className="flex w-full min-w-0 flex-col items-center gap-1.5 sm:w-auto sm:items-end">
-                  <label className="relative flex h-[3.25rem] w-[13.5rem] max-w-full shrink-0 cursor-pointer rounded-full border-2 border-slate-300 bg-slate-100 p-1.5 dark:border-slate-600 dark:bg-slate-800/90">
-                    <input
-                      type="color"
-                      className="absolute inset-0 z-10 m-0 h-full w-full cursor-pointer border-0 p-0 opacity-0"
-                      value={appearance.accent}
-                      disabled={!appearanceReady}
-                      aria-label="Accent color"
-                      onChange={(e) => setAppearance((prev) => ({ ...prev, accent: e.target.value }))}
-                    />
-                    <div
-                      className="min-h-0 min-w-0 flex-1 rounded-full shadow ring-1 ring-black/10 dark:ring-white/10"
-                      style={{ backgroundColor: appearance.accent }}
-                      aria-hidden
-                    />
-                  </label>
-                  <p className="max-w-[13.5rem] text-center text-xs leading-snug uppercase tracking-wide opacity-80 sm:text-right">
-                    {appearance.accent}
-                  </p>
+                  <div
+                    role="radiogroup"
+                    aria-label="Accent color"
+                    className="grid h-[3.25rem] w-[13.5rem] max-w-full shrink-0 grid-cols-4 gap-1 rounded-full border-2 border-slate-300 bg-slate-100 p-1.5 dark:border-slate-600 dark:bg-slate-800/90"
+                  >
+                    {ACCENT_SWATCHES.map((sw) => {
+                      const active = accentMatchesSwatch(appearance.accent, sw);
+                      const baseBtn =
+                        "flex items-center justify-center rounded-full transition-colors touch-manipulation";
+                      const activeBtn =
+                        "bg-white text-slate-800 shadow ring-1 ring-black/10 dark:bg-slate-600 dark:text-slate-100 dark:ring-white/15";
+                      const idleBtn =
+                        "text-slate-500 hover:bg-white/60 dark:text-slate-400 dark:hover:bg-slate-700/50";
+                      return (
+                        <button
+                          key={sw.hex}
+                          type="button"
+                          role="radio"
+                          aria-checked={active}
+                          aria-label={sw.label}
+                          disabled={!appearanceReady}
+                          onClick={() =>
+                            setAppearance((prev) => ({ ...prev, accent: sw.hex }))
+                          }
+                          className={`${baseBtn} ${active ? activeBtn : idleBtn}`}
+                        >
+                          <span
+                            className="h-[1.35rem] w-[1.35rem] shrink-0 rounded-full shadow-inner ring-1 ring-black/25 dark:ring-white/25"
+                            style={{ backgroundColor: sw.hex }}
+                            aria-hidden
+                          />
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {(() => {
+                    const sw = accentSwatchFromValue(appearance.accent);
+                    if (!sw) return null;
+                    return (
+                      <p className="max-w-[13.5rem] text-center text-xs leading-snug opacity-80 sm:text-right">
+                        {sw.label === "Red" ? "Red (default)" : sw.label}
+                      </p>
+                    );
+                  })()}
                 </div>
               </div>
               {/* <label className={`flex items-center justify-between gap-2 ${!appearanceReady ? "pointer-events-none opacity-50" : ""}`}>
@@ -4016,7 +4162,10 @@ function SettingsPanel({
                   (allow("members.updateRole") &&
                     (member.role !== "OWNER" || effectiveRole === "OWNER"));
                 return (
-                <div key={member.id} className="rounded-lg border p-3">
+                <div
+                  key={member.id}
+                  className="rounded-lg bg-slate-100 p-3 text-left text-sm dark:bg-slate-700"
+                >
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div>
                       <p className="flex items-center gap-2 font-semibold">
@@ -4437,12 +4586,15 @@ function SettingsPanel({
                   return;
                 }
                 const memberId = editingMember.id;
-                const previous = teamMembers.find((m) => m.id === memberId);
-                if (!previous) {
+                const memberRow = teamMembers.find((m) => m.id === memberId);
+                const previousName =
+                  memberRow?.name ??
+                  (memberId === user.id ? (accountDetails?.name ?? user.name) : undefined);
+                if (previousName === undefined) {
                   setEditMemberErr("Member not found.");
                   return;
                 }
-                if (trimmed === previous.name) {
+                if (trimmed === previousName) {
                   setEditingMember(null);
                   return;
                 }
@@ -4494,7 +4646,7 @@ function SettingsPanel({
                   .catch((err) => {
                     if (memberId === user.id) {
                       setUser((prevUser) =>
-                        prevUser ? { ...prevUser, name: previous.name } : prevUser,
+                        prevUser ? { ...prevUser, name: previousName } : prevUser,
                       );
                     }
                     setTeamActionError(`Rename failed: ${(err as Error).message}`);
@@ -4511,8 +4663,12 @@ function SettingsPanel({
                 Edit name
               </h3>
               <p className="mb-3 text-xs opacity-70">
-                Username @{teamMembers.find((m) => m.id === editingMember.id)?.username ?? ""}
-                {" "}stays the same — only the display name changes.
+                Username @
+                {teamMembers.find((m) => m.id === editingMember.id)?.username ??
+                  accountDetails?.username ??
+                  user.username ??
+                  ""}{" "}
+                stays the same — only the display name changes.
               </p>
               <label className="mb-1 block text-sm font-medium">Name</label>
               <input
@@ -4541,6 +4697,77 @@ function SettingsPanel({
                   type="submit"
                   className="btn-accent rounded-lg px-4 py-2 text-sm font-medium"
                 >
+                  Save
+                </button>
+              </div>
+            </form>
+          </div>,
+          document.body,
+        )}
+      {storeRenameModalOpen &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 p-4"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="store-rename-title"
+            onMouseDown={(e) => {
+              if (e.target === e.currentTarget) {
+                setSettingsErr("");
+                setStoreRenameModalOpen(false);
+              }
+            }}
+          >
+            <form
+              className="w-full max-w-md rounded-xl border bg-card p-5 shadow-lg"
+              onMouseDown={(e) => e.stopPropagation()}
+              onSubmit={async (e) => {
+                e.preventDefault();
+                setSettingsErr("");
+                try {
+                  await api("/api/settings/store-details", {
+                    method: "PUT",
+                    body: JSON.stringify({ name: storeNameDraft }),
+                  });
+                  setStoreRenameModalOpen(false);
+                  await refreshCore();
+                } catch (error) {
+                  setSettingsErr((error as Error).message);
+                }
+              }}
+            >
+              <h3 id="store-rename-title" className="mb-3 text-lg font-semibold">
+                Change store name
+              </h3>
+              <p className="mb-3 text-xs opacity-70">
+                This is the name shown for your store in the app. Trainers and trainees see it
+                where store context appears.
+              </p>
+              <label className="mb-1 block text-sm font-medium">Store name</label>
+              <input
+                autoFocus
+                value={storeNameDraft}
+                onChange={(e) => setStoreNameDraft(e.target.value)}
+                className="mb-3 w-full rounded-lg border bg-background p-3"
+                placeholder="Store name"
+                required
+              />
+              {settingsErr && <p className="mb-3 text-sm text-rose-600">{settingsErr}</p>}
+              <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  className="rounded-lg border px-4 py-2 text-sm font-medium"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setSettingsErr("");
+                    setStoreRenameModalOpen(false);
+                  }}
+                >
+                  Cancel
+                </button>
+                <button type="submit" className="btn-accent rounded-lg px-4 py-2 text-sm font-medium">
                   Save
                 </button>
               </div>

@@ -14,7 +14,7 @@ const appearanceSchema = z.object({
 const BASE_DEFAULTS = {
   darkMode: false,
   fontScale: 1,
-  accent: "#dc2626",
+  accent: "#e51636",
   compactCards: false,
   followSystemTheme: true,
 } as const;

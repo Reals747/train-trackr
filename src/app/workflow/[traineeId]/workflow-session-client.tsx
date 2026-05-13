@@ -46,7 +46,7 @@ type ProgressItem = {
 const DEFAULT_APPEARANCE: AppearanceSettings = {
   darkMode: false,
   fontScale: 1,
-  accent: "#dc2626",
+  accent: "#e51636",
   compactCards: false,
   followSystemTheme: true,
 };
