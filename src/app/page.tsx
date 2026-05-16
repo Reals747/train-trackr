@@ -3329,6 +3329,93 @@ function ResetStoreCodeConfirmModal({
   );
 }
 
+function teamMemberRemoveActionLabel(role: RoleName): string {
+  switch (role) {
+    case "TRAINER":
+      return "Remove trainer";
+    case "OWNER":
+      return "Remove owner";
+    case "WEBSITE_DEVELOPER":
+      return "Remove developer";
+    default:
+      return "Remove admin";
+  }
+}
+
+function DeleteTeamMemberConfirmModal({
+  memberName,
+  memberRole,
+  busy,
+  error,
+  onClose,
+  onConfirm,
+}: {
+  memberName: string;
+  memberRole: RoleName;
+  busy: boolean;
+  error: string;
+  onClose: () => void;
+  onConfirm: () => void | Promise<void>;
+}) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !busy) onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose, busy]);
+
+  const confirmLabel = teamMemberRemoveActionLabel(memberRole);
+
+  return (
+    <div
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="delete-team-member-dialog-title"
+      onMouseDown={(e) => {
+        if (busy) return;
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div
+        className="w-full max-w-md rounded-xl border bg-card p-5 shadow-xl"
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        <h3
+          id="delete-team-member-dialog-title"
+          className="mb-2 text-lg font-semibold text-rose-900 dark:text-rose-200"
+        >
+          Remove this team member?
+        </h3>
+        <p className="mb-4 text-sm text-foreground">
+          <strong className="font-semibold">{memberName}</strong> ({roleLabel(memberRole)}) will be
+          removed from your store and will lose access immediately. This cannot be undone.
+        </p>
+        {error && <p className="mb-3 text-sm text-rose-600">{error}</p>}
+        <div className="flex flex-wrap justify-end gap-2">
+          <button
+            type="button"
+            className="rounded-lg border px-4 py-2 text-sm font-medium"
+            disabled={busy}
+            onClick={onClose}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-medium text-white hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-40"
+            disabled={busy}
+            onClick={() => void onConfirm()}
+          >
+            {busy ? "Removing…" : confirmLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function DeleteTraineeConfirmModal({
   traineeName,
   busy,
@@ -3547,6 +3634,8 @@ function SettingsPanel({
   const [settingsErr, setSettingsErr] = useState("");
   const [trainerInviteModalOpen, setTrainerInviteModalOpen] = useState(false);
   const [teamActionError, setTeamActionError] = useState("");
+  const [memberPendingDelete, setMemberPendingDelete] = useState<TeamMember | null>(null);
+  const [deletingMemberId, setDeletingMemberId] = useState<string | null>(null);
   const [deleteStoreErr, setDeleteStoreErr] = useState("");
   const [deleteStoreModalOpen, setDeleteStoreModalOpen] = useState(false);
   const [deleteStoreNameConfirm, setDeleteStoreNameConfirm] = useState("");
@@ -4127,7 +4216,7 @@ function SettingsPanel({
                 />
               )}
               <p className="mb-2 text-sm font-semibold">Team members</p>
-              {teamActionError && (
+              {teamActionError && !memberPendingDelete && (
                 <p className="mb-2 text-sm text-rose-600">{teamActionError}</p>
               )}
               <div className="space-y-3 text-sm">
@@ -4385,20 +4474,10 @@ function SettingsPanel({
                             ? "cursor-not-allowed rounded-lg border border-neutral-300 bg-neutral-200 px-3 py-2 text-sm font-medium text-neutral-500 dark:border-neutral-600 dark:bg-neutral-700 dark:text-neutral-400"
                             : "rounded-lg bg-rose-600 px-3 py-2 text-sm font-medium text-white hover:bg-rose-700"
                         }
-                        onClick={async () => {
+                        onClick={() => {
                           if (roleLocked) return;
                           setTeamActionError("");
-                          try {
-                            await api(`/api/settings/trainers/${member.id}`, {
-                              method: "DELETE",
-                            });
-                            await refreshCore();
-                            if (member.id === user.id) {
-                              await onLogout();
-                            }
-                          } catch (err) {
-                            setTeamActionError((err as Error).message);
-                          }
+                          setMemberPendingDelete(member);
                         }}
                       >
                         {member.role === "TRAINER"
@@ -4512,6 +4591,39 @@ function SettingsPanel({
           )}
         </div>
       </div>
+      {memberPendingDelete !== null && (
+        <DeleteTeamMemberConfirmModal
+          memberName={memberPendingDelete.name}
+          memberRole={memberPendingDelete.role}
+          busy={deletingMemberId === memberPendingDelete.id}
+          error={teamActionError}
+          onClose={() => {
+            if (deletingMemberId === memberPendingDelete.id) return;
+            setMemberPendingDelete(null);
+            setTeamActionError("");
+          }}
+          onConfirm={async () => {
+            const target = memberPendingDelete;
+            if (!target || deletingMemberId) return;
+            setTeamActionError("");
+            setDeletingMemberId(target.id);
+            try {
+              await api(`/api/settings/trainers/${target.id}`, {
+                method: "DELETE",
+              });
+              setMemberPendingDelete(null);
+              await refreshCore();
+              if (target.id === user.id) {
+                await onLogout();
+              }
+            } catch (err) {
+              setTeamActionError((err as Error).message);
+            } finally {
+              setDeletingMemberId(null);
+            }
+          }}
+        />
+      )}
       {traineePendingDelete !== null && (
         <DeleteTraineeConfirmModal
           traineeName={traineePendingDelete.name}
