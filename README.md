@@ -87,6 +87,14 @@ Defined in [`prisma/schema.prisma`](prisma/schema.prisma). All store-scoped enti
    npm run prisma:seed
    ```
 
+   **Supabase RLS (production):** migration `20260520190000_enable_rls_public_tables` turns on RLS for every `public` table with **no** `anon` / `authenticated` policies, so the Supabase Data API cannot read or write rows. The app still uses Prisma over `DATABASE_URL` (postgres / table owner bypasses RLS). Apply on hosted DB:
+
+   ```bash
+   npx tsx prisma/scripts/apply-rls-lockdown.ts
+   ```
+
+   If `prisma migrate deploy` works on your connection, that is equivalent. **Revert** (does not delete data): run [`prisma/scripts/revert-rls-lockdown.sql`](prisma/scripts/revert-rls-lockdown.sql) in the Supabase SQL Editor.
+
 4. **Run dev server** (listens on `0.0.0.0:3000`)
 
    ```bash
