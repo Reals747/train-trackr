@@ -29,6 +29,7 @@ model Store {
   activityLogs     ActivityLog[]
   settings         StoreSetting?
   announcements    Announcement[]
+  taskCells        TaskCell[]
 }
 
 model User {
@@ -171,6 +172,25 @@ model TrainingProgress {
 
   @@unique([traineeId, checklistItemId])
   @@index([traineeId, completed])
+}
+
+/**
+ * One editable cell of the store-wide Tasks grid (Settings → Tasks tab / expanded page).
+ * Keyed by (storeId, rowIndex, colIndex). Sparse: only edited cells are stored. Row/column
+ * counts live in the client for now; this model is intentionally index-based so the grid can
+ * grow rows/columns later without a schema change.
+ */
+model TaskCell {
+  id        String   @id @default(cuid())
+  storeId   String
+  rowIndex  Int
+  colIndex  Int
+  content   String   @default("")
+  updatedAt DateTime @updatedAt
+  store     Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@unique([storeId, rowIndex, colIndex])
+  @@index([storeId])
 }
 
 model ActivityLog {

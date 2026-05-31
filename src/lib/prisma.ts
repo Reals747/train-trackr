@@ -14,6 +14,13 @@ function hasWorkflowGeneralComments(client: PrismaClient): boolean {
   );
 }
 
+/** True when this generated client includes the TaskCell model. */
+function hasTaskCell(client: PrismaClient): boolean {
+  return (
+    typeof (client as { taskCell?: { findMany?: unknown } }).taskCell?.findMany === "function"
+  );
+}
+
 function createClient() {
   return new PrismaClient({
     log: ["error"],
@@ -48,4 +55,9 @@ export const prisma = getPrisma();
 /** Used by API routes to fail fast with a clear message instead of `undefined.findFirst`. */
 export function prismaHasWorkflowGeneralComments(): boolean {
   return hasWorkflowGeneralComments(prisma);
+}
+
+/** Used by the tasks API route to fail fast with a clear message instead of `undefined.findMany`. */
+export function prismaHasTaskCell(): boolean {
+  return hasTaskCell(prisma);
 }

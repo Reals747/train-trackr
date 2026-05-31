@@ -36,6 +36,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { formatDateTime } from "@/lib/format-datetime";
 import { can, roleLabel, type Permission, type RoleName } from "@/lib/permissions";
 import LoadingScreen from "@/components/LoadingScreen";
+import { TasksGrid } from "@/components/TasksGrid";
 
 type Role = RoleName;
 type AppUser = {
@@ -413,6 +414,30 @@ async function api<T>(url: string, init?: RequestInit): Promise<T> {
     throw e;
   }
   return response.json() as Promise<T>;
+}
+
+/** Centered amber "under development" callout, reused by the Tasks and Schedule tabs. */
+function UnderDevelopmentNotice() {
+  return (
+    <div className="flex flex-col items-center gap-2 rounded-lg border border-amber-300/90 bg-amber-100 px-4 py-6 text-center text-amber-900 dark:border-amber-500/50 dark:bg-amber-900/40 dark:text-amber-100">
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        viewBox="0 0 20 20"
+        fill="currentColor"
+        className="h-8 w-8 shrink-0"
+        aria-hidden
+      >
+        <path
+          fillRule="evenodd"
+          d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.515 2.625H3.72c-1.345 0-2.188-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 5zm0 9a1 1 0 100-2 1 1 0 000 2z"
+          clipRule="evenodd"
+        />
+      </svg>
+      <p className="text-sm font-medium">
+        This feature is under development and will be available soon.
+      </p>
+    </div>
+  );
 }
 
 function PositionChecklistStatusTag({ status }: { status: DashboardPositionDetail["status"] }) {
@@ -955,7 +980,9 @@ export default function Home() {
         {(
           [
             ["dashboard", "Dashboard"],
-            ["workflow", "Checklist"],
+            ["workflow", "Training"],
+            ["tasks", "Tasks"],
+            ["schedule", "Schedule"],
             // ["trainees", "Trainees"], — hidden; restore with TraineePanel block below
           ] as const
         ).map(([key, label]) => (
@@ -1067,6 +1094,21 @@ export default function Home() {
               Load Checklist
             </button>
           </div>
+        </section>
+      )}
+
+      {tab === "tasks" && (
+        <section className="rounded-xl bg-card p-4 shadow-sm">
+          <h2 className="mb-3 text-lg font-semibold">Tasks</h2>
+          <UnderDevelopmentNotice />
+          <TasksGrid onExpand={() => router.push("/tasks")} />
+        </section>
+      )}
+
+      {tab === "schedule" && (
+        <section className="rounded-xl bg-card p-4 shadow-sm">
+          <h2 className="mb-3 text-lg font-semibold">Schedule</h2>
+          <UnderDevelopmentNotice />
         </section>
       )}
 
