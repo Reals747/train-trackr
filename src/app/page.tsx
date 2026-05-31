@@ -434,7 +434,7 @@ function UnderDevelopmentNotice() {
         />
       </svg>
       <p className="text-sm font-medium">
-        This feature is under development and will be available soon.
+        This feature is under development and not ready yet
       </p>
     </div>
   );
@@ -976,7 +976,7 @@ export default function Home() {
         </div>
       </header>
 
-      <nav className="flex flex-row gap-2 rounded-xl bg-card p-2 shadow-sm">
+      <nav className="flex flex-row flex-wrap gap-2 rounded-xl bg-card p-2 shadow-sm sm:flex-nowrap">
         {(
           [
             ["dashboard", "Dashboard"],
@@ -990,7 +990,7 @@ export default function Home() {
             key={key}
             type="button"
             onClick={() => setTab(key)}
-            className={`min-w-0 flex-1 basis-0 whitespace-nowrap rounded-lg px-2 py-3 text-xs font-medium sm:px-3 sm:text-sm ${tab === key ? "btn-accent" : "bg-slate-100 text-slate-900 dark:bg-slate-700 dark:text-slate-100"}`}
+            className={`min-w-0 grow basis-[calc(50%-0.25rem)] whitespace-nowrap rounded-lg px-2 py-3 text-xs font-medium sm:flex-1 sm:basis-0 sm:px-3 sm:text-sm ${tab === key ? "btn-accent" : "bg-slate-100 text-slate-900 dark:bg-slate-700 dark:text-slate-100"}`}
           >
             {label}
           </button>
