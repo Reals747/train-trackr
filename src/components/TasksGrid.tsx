@@ -13,7 +13,7 @@ import { TASK_DAYS, type GridRow, parseTaskLines, setTaskDone } from "@/lib/task
  */
 const POLL_INTERVAL_MS = 5000;
 
-function ExpandIcon({ className }: { className?: string }) {
+export function ExpandIcon({ className }: { className?: string }) {
   return (
     <svg
       xmlns="http://www.w3.org/2000/svg"

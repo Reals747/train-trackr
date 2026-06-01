@@ -5,7 +5,8 @@ import { useRouter } from "next/navigation";
 import { formatDateTime } from "@/lib/format-datetime";
 import { can } from "@/lib/permissions";
 import LoadingScreen from "@/components/LoadingScreen";
-import { TasksGrid } from "@/components/TasksGrid";
+import { ExpandIcon, TasksGrid } from "@/components/TasksGrid";
+import { TasksTodayOverview } from "@/components/TasksTodayOverview";
 import { api } from "./_home/api";
 import { ACCENT_SWATCHES, DEFAULT_APPEARANCE } from "./_home/appearance";
 import { ActivityHistoryIcon, SettingsGearIcon } from "./_home/icons";
@@ -347,7 +348,14 @@ export default function Home() {
             onRefresh={refreshCore}
           />
           */}
-          <section className="rounded-xl bg-card p-4 shadow-sm">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
+          <section className="rounded-xl bg-card p-4 shadow-sm lg:min-w-0 lg:flex-1">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+              <h2 className="text-lg font-semibold">Tasks Overview</h2>
+            </div>
+            <TasksTodayOverview />
+          </section>
+          <section className="rounded-xl bg-card p-4 shadow-sm lg:min-w-0 lg:flex-1">
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
               <h2 className="text-lg font-semibold">Trainee progress</h2>
               {canOpenTraineeManagement && (
@@ -401,6 +409,7 @@ export default function Home() {
               })}
             </div>
           </section>
+          </div>
         </>
       )}
 
@@ -437,9 +446,20 @@ export default function Home() {
 
       {tab === "tasks" && (
         <section className="rounded-xl bg-card p-4 shadow-sm">
-          <h2 className="mb-3 text-lg font-semibold">Tasks</h2>
-          <UnderDevelopmentNotice />
-          <TasksGrid onExpand={() => router.push("/tasks")} />
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <h2 className="text-lg font-semibold">Tasks</h2>
+            <button
+              type="button"
+              onClick={() => router.push("/tasks")}
+              aria-label="Open tasks in full page"
+              title="Open in full page"
+              className="inline-flex items-center gap-1.5 rounded-lg bg-slate-100 px-3 py-2 text-sm font-medium text-slate-900 hover:bg-slate-200/90 dark:bg-slate-700 dark:text-slate-100 dark:hover:bg-slate-600"
+            >
+              <ExpandIcon className="h-4 w-4" />
+              Expand
+            </button>
+          </div>
+          <TasksGrid />
         </section>
       )}
 
