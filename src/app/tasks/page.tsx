@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { clientApi } from "@/lib/client-api";
 import { MANAGER_ROLES, type RoleName } from "@/lib/permissions";
-import { TasksGrid } from "@/components/TasksGrid";
+import { TasksManager } from "@/components/TasksManager";
 
 export default function TasksFullPage() {
   const [role, setRole] = useState<RoleName | null>(null);
@@ -54,7 +54,7 @@ export default function TasksFullPage() {
         </div>
       </div>
       <section className="rounded-xl bg-card p-4 shadow-sm">
-        <TasksGrid manageMode={manageMode} />
+        <TasksManager manageMode={manageMode} />
       </section>
     </main>
   );

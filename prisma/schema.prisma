@@ -29,7 +29,9 @@ model Store {
   activityLogs     ActivityLog[]
   settings         StoreSetting?
   announcements    Announcement[]
-  taskCells        TaskCell[]
+  taskRows         TaskRow[]
+  taskPresets      TaskPreset[]
+  taskWeekArchives TaskWeekArchive[]
 }
 
 model User {
@@ -175,22 +177,69 @@ model TrainingProgress {
 }
 
 /**
- * One editable cell of the store-wide Tasks grid (Settings → Tasks tab / expanded page).
- * Keyed by (storeId, rowIndex, colIndex). Sparse: only edited cells are stored. Row/column
- * counts live in the client for now; this model is intentionally index-based so the grid can
- * grow rows/columns later without a schema change.
+ * One employee row in the store-wide Tasks grid. Managers add/rename/reorder/remove rows.
+ * Labels are free-form names (not tied to login accounts). `order` is 0-based ascending.
+ */
+model TaskRow {
+  id        String     @id @default(cuid())
+  storeId   String
+  label     String     @default("")
+  order     Int        @default(0)
+  createdAt DateTime   @default(now())
+  store     Store      @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  cells     TaskCell[]
+
+  @@index([storeId, order])
+}
+
+/**
+ * One editable cell of the Tasks grid, owned by a row (employee) and a day column
+ * (colIndex 0..5 = Mon..Sat). Sparse: only edited cells are stored. `content` holds one task
+ * per line with optional `[x]`/`[ ]` checkbox markers — see `@/lib/tasks`.
  */
 model TaskCell {
   id        String   @id @default(cuid())
-  storeId   String
-  rowIndex  Int
+  rowId     String
   colIndex  Int
   content   String   @default("")
   updatedAt DateTime @updatedAt
+  row       TaskRow  @relation(fields: [rowId], references: [id], onDelete: Cascade)
+
+  @@unique([rowId, colIndex])
+  @@index([rowId])
+}
+
+/**
+ * A reusable task in the store's "bank". Powers autocomplete while editing cells and the
+ * drag-and-drop preset cards. Auto-populated when managers save new task text, and editable
+ * directly in the bank UI. `text` is unique per store so the same task isn't banked twice.
+ */
+model TaskPreset {
+  id        String   @id @default(cuid())
+  storeId   String
+  text      String
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
   store     Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
 
-  @@unique([storeId, rowIndex, colIndex])
-  @@index([storeId])
+  @@unique([storeId, text])
+  @@index([storeId, order])
+}
+
+/**
+ * An immutable snapshot of a past week's grid, captured when a manager starts a new week.
+ * `data` is the rendered grid (rows, days, tasks, done state) so past weeks can be viewed
+ * read-only without depending on the live rows/cells, which keep changing.
+ */
+model TaskWeekArchive {
+  id         String   @id @default(cuid())
+  storeId    String
+  label      String
+  data       Json
+  archivedAt DateTime @default(now())
+  store      Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@index([storeId, archivedAt])
 }
 
 model ActivityLog {

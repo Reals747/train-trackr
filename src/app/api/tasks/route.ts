@@ -1,64 +1,34 @@
-import { Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { errorResponse, requireAuth, STORE_MANAGER_ROLES } from "@/lib/api";
-import { prisma, prismaHasTaskCell } from "@/lib/prisma";
+import { prisma, prismaHasTaskRow } from "@/lib/prisma";
+import { TASK_COLUMN_COUNT, setTaskDone } from "@/lib/tasks";
+import { handleTasksError, staleClientError } from "@/lib/tasks-api";
+import { addPresetsFromContent, loadGrid, rowBelongsToStore } from "@/lib/tasks-server";
 
 const putSchema = z.object({
-  rowIndex: z.number().int().min(0).max(999),
-  colIndex: z.number().int().min(0).max(999),
+  rowId: z.string().min(1),
+  colIndex: z.number().int().min(0).max(TASK_COLUMN_COUNT - 1),
   content: z.string().max(20000),
 });
 
-function tasksTableMissingMessage(): string {
-  return "Tasks storage is not set up on this database yet. From the training-tracker folder, run: npx prisma migrate deploy (use the same DATABASE_URL the app uses).";
-}
-
-function isMissingTaskCellTable(e: unknown): boolean {
-  if (!(e instanceof Prisma.PrismaClientKnownRequestError)) return false;
-  if (e.code === "P2021") return true;
-  const meta = e.meta as { table?: string; modelName?: string } | undefined;
-  const tableRef = [meta?.table, meta?.modelName].filter(Boolean).join(" ");
-  if (tableRef.includes("TaskCell")) return true;
-  return e.message.includes("TaskCell") && e.message.includes("does not exist");
-}
-
-function jsonError(message: string, status: number, prismaCode?: string) {
-  return NextResponse.json({ error: message, ...(prismaCode ? { prismaCode } : {}) }, { status });
-}
+const patchSchema = z.object({
+  rowId: z.string().min(1),
+  colIndex: z.number().int().min(0).max(TASK_COLUMN_COUNT - 1),
+  lineIndex: z.number().int().min(0).max(999),
+  done: z.boolean(),
+});
 
 export async function GET() {
   const { user, error } = await requireAuth();
   if (error) return error;
-
-  if (!prismaHasTaskCell()) {
-    return jsonError(
-      "Prisma client is out of date. Run: npx prisma generate — then restart next dev (or redeploy).",
-      503,
-      "PRISMA_CLIENT_STALE",
-    );
-  }
+  if (!prismaHasTaskRow()) return staleClientError();
 
   try {
-    const cells = await prisma.taskCell.findMany({
-      where: { storeId: user.storeId },
-      select: { rowIndex: true, colIndex: true, content: true },
-    });
-    return NextResponse.json({ cells });
+    const rows = await loadGrid(user.storeId);
+    return NextResponse.json({ rows });
   } catch (e) {
-    if (isMissingTaskCellTable(e)) {
-      return jsonError(tasksTableMissingMessage(), 503, "P2021");
-    }
-    if (e instanceof Prisma.PrismaClientKnownRequestError) {
-      console.error("[tasks GET]", e.code, e.message);
-      return jsonError("Could not load tasks", 500, e.code);
-    }
-    if (e instanceof Prisma.PrismaClientInitializationError) {
-      console.error("[tasks GET]", e.message);
-      return jsonError("Could not connect to the database from the server.", 503, e.errorCode);
-    }
-    console.error("[tasks GET]", e);
-    return errorResponse("Could not load tasks", 500);
+    return handleTasksError("[tasks GET]", e, "Could not load tasks");
   }
 }
 
@@ -68,40 +38,62 @@ export async function PUT(request: Request) {
 
   const parsed = putSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return errorResponse("Invalid tasks payload");
+  if (!prismaHasTaskRow()) return staleClientError();
 
-  if (!prismaHasTaskCell()) {
-    return jsonError(
-      "Prisma client is out of date. Run: npx prisma generate — then restart next dev (or redeploy).",
-      503,
-      "PRISMA_CLIENT_STALE",
-    );
-  }
-
-  const { rowIndex, colIndex, content } = parsed.data;
+  const { rowId, colIndex, content } = parsed.data;
 
   try {
-    const row = await prisma.taskCell.upsert({
-      where: {
-        storeId_rowIndex_colIndex: { storeId: user.storeId, rowIndex, colIndex },
-      },
-      create: { storeId: user.storeId, rowIndex, colIndex, content },
+    if (!(await rowBelongsToStore(rowId, user.storeId))) {
+      return errorResponse("Row not found", 404);
+    }
+
+    const cell = await prisma.taskCell.upsert({
+      where: { rowId_colIndex: { rowId, colIndex } },
+      create: { rowId, colIndex, content },
       update: { content },
-      select: { rowIndex: true, colIndex: true, content: true },
+      select: { rowId: true, colIndex: true, content: true },
     });
-    return NextResponse.json({ cell: row });
+    await addPresetsFromContent(user.storeId, content);
+    return NextResponse.json({ cell });
   } catch (e) {
-    if (isMissingTaskCellTable(e)) {
-      return jsonError(tasksTableMissingMessage(), 503, "P2021");
+    return handleTasksError("[tasks PUT]", e, "Could not save task");
+  }
+}
+
+/**
+ * Toggle a single task's checkbox. Allowed for any authenticated user in the store (checking
+ * tasks off is everyday staff work, unlike editing task text which stays gated to managers via
+ * PUT). Only flips the line's done marker, so it can't inject or overwrite task text.
+ */
+export async function PATCH(request: Request) {
+  const { user, error } = await requireAuth();
+  if (error) return error;
+
+  const parsed = patchSchema.safeParse(await request.json().catch(() => null));
+  if (!parsed.success) return errorResponse("Invalid tasks payload");
+  if (!prismaHasTaskRow()) return staleClientError();
+
+  const { rowId, colIndex, lineIndex, done } = parsed.data;
+
+  try {
+    if (!(await rowBelongsToStore(rowId, user.storeId))) {
+      return errorResponse("Row not found", 404);
     }
-    if (e instanceof Prisma.PrismaClientKnownRequestError) {
-      console.error("[tasks PUT]", e.code, e.message);
-      return jsonError("Could not save task", 500, e.code);
-    }
-    if (e instanceof Prisma.PrismaClientInitializationError) {
-      console.error("[tasks PUT]", e.message);
-      return jsonError("Could not connect to the database from the server.", 503, e.errorCode);
-    }
-    console.error("[tasks PUT]", e);
-    return errorResponse("Could not save task", 500);
+
+    const existing = await prisma.taskCell.findUnique({
+      where: { rowId_colIndex: { rowId, colIndex } },
+      select: { content: true },
+    });
+    const nextContent = setTaskDone(existing?.content ?? "", lineIndex, done);
+
+    const cell = await prisma.taskCell.upsert({
+      where: { rowId_colIndex: { rowId, colIndex } },
+      create: { rowId, colIndex, content: nextContent },
+      update: { content: nextContent },
+      select: { rowId: true, colIndex: true, content: true },
+    });
+    return NextResponse.json({ cell });
+  } catch (e) {
+    return handleTasksError("[tasks PATCH]", e, "Could not update task");
   }
 }

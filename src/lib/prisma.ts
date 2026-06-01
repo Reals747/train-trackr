@@ -21,6 +21,13 @@ function hasTaskCell(client: PrismaClient): boolean {
   );
 }
 
+/** True when this generated client includes the TaskRow model (added in the grid rows migration). */
+function hasTaskRow(client: PrismaClient): boolean {
+  return (
+    typeof (client as { taskRow?: { findMany?: unknown } }).taskRow?.findMany === "function"
+  );
+}
+
 function createClient() {
   return new PrismaClient({
     log: ["error"],
@@ -33,7 +40,7 @@ function createClient() {
  */
 function getPrisma(): PrismaClient {
   const cached = globalForPrisma.prisma;
-  if (cached && hasWorkflowGeneralComments(cached)) {
+  if (cached && hasWorkflowGeneralComments(cached) && hasTaskRow(cached)) {
     return cached;
   }
   if (cached) {
@@ -60,4 +67,9 @@ export function prismaHasWorkflowGeneralComments(): boolean {
 /** Used by the tasks API route to fail fast with a clear message instead of `undefined.findMany`. */
 export function prismaHasTaskCell(): boolean {
   return hasTaskCell(prisma);
+}
+
+/** Used by the tasks API routes to detect a stale client missing the rows/presets/archive models. */
+export function prismaHasTaskRow(): boolean {
+  return hasTaskRow(prisma);
 }
