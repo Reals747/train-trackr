@@ -97,36 +97,34 @@ export function TasksTodayOverview({ activeProfile = "FOH" }: { activeProfile?: 
           No tasks for {dayName}.
         </p>
       ) : (
-        <ul className="space-y-2">
+        <ul className="space-y-3">
           {todays.map(({ row, tasks }) => (
-            <li
-              key={row.id}
-              className="rounded-lg border border-slate-200 p-3 dark:border-slate-600"
-            >
-              <p className="font-medium">
-                {row.label || <span className="text-slate-400">—</span>}
-              </p>
-              <ul className="mt-2 flex flex-col gap-1">
-                {tasks.map((task, lineIndex) => (
-                  <li key={lineIndex} className="flex items-start gap-2 text-sm">
-                    <input
-                      type="checkbox"
-                      checked={task.done}
-                      onChange={(e) => toggleTask(row.id, lineIndex, e.target.checked)}
-                      aria-label={`Mark "${task.text}" ${task.done ? "not done" : "done"}`}
-                      className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer accent-slate-600 dark:accent-slate-300"
-                    />
-                    <span
-                      className={`min-w-0 break-words ${
-                        task.done ? "text-slate-400 line-through dark:text-slate-500" : ""
-                      }`}
-                    >
-                      {task.text}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </li>
+              <li
+                key={row.id}
+                className="w-full rounded-lg bg-slate-100 p-3 text-left text-sm font-medium text-slate-900 dark:bg-slate-700 dark:text-slate-100"
+              >
+                <p className="font-semibold">{row.label || "—"}</p>
+                <ul className="mt-2 flex flex-col gap-1">
+                  {tasks.map((task, lineIndex) => (
+                    <li key={lineIndex} className="flex items-start gap-2 text-sm font-normal">
+                      <input
+                        type="checkbox"
+                        checked={task.done}
+                        onChange={(e) => toggleTask(row.id, lineIndex, e.target.checked)}
+                        aria-label={`Mark "${task.text}" ${task.done ? "not done" : "done"}`}
+                        className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer accent-slate-600 dark:accent-slate-300"
+                      />
+                      <span
+                        className={`min-w-0 break-words ${
+                          task.done ? "text-slate-400 line-through dark:text-slate-500" : ""
+                        }`}
+                      >
+                        {task.text}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </li>
           ))}
         </ul>
       )}
