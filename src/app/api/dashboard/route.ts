@@ -55,7 +55,13 @@ export async function GET(request: Request) {
       trainee.progress.map((p) => [p.checklistItemId, p.completed]),
     );
 
-    const positionDetails = sortedStorePositions.map((pos) => {
+    /** In BOTH view, list every trainee but score each against their own profile's positions only. */
+    const positionsForTrainee =
+      active === "BOTH"
+        ? sortedStorePositions.filter((pos) => pos.profile === trainee.profile)
+        : sortedStorePositions;
+
+    const positionDetails = positionsForTrainee.map((pos) => {
       const items = pos.items.map((item) => ({
         id: item.id,
         text: item.text,
