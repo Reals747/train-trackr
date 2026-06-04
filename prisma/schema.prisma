@@ -17,6 +17,14 @@ enum Role {
   VIEWER
 }
 
+/// Restaurant area a piece of store data belongs to. FOH = Front of House, BOH = Back of House.
+/// Data is tagged with exactly one of these; the per-user "active profile" view filter additionally
+/// supports a "BOTH" value (stored as a string on User) that is intentionally NOT part of this enum.
+enum Profile {
+  FOH
+  BOH
+}
+
 model Store {
   id               String          @id @default(cuid())
   name             String
@@ -47,6 +55,9 @@ model User {
   trainerInviteCodeUsed   String?
   /** Per-user UI prefs (accent, dark mode, etc.) — synced across devices for this account. */
   appearanceJson        Json?
+  /** Per-user active profile view filter: "FOH", "BOH", or "BOTH". String (not the Profile enum)
+   *  because "BOTH" is a view-only value with no corresponding data tag. Synced across devices. */
+  activeProfile           String               @default("FOH")
   createdAt               DateTime             @default(now())
   store                   Store                @relation(fields: [storeId], references: [id], onDelete: Cascade)
   completions             TrainingProgress[]
@@ -95,6 +106,7 @@ model StoreSetting {
 model Position {
   id              String                      @id @default(cuid())
   storeId         String
+  profile         Profile                     @default(FOH)
   name            String
   hidden          Boolean                     @default(false)
   /** Manual sort order within a store; 0-based ascending. Backfilled from alphabetical name on first migration. */
@@ -105,8 +117,9 @@ model Position {
   trainees        TraineePosition[]
   workflowComments WorkflowGeneralComments[]
 
-  @@unique([storeId, name])
+  @@unique([storeId, profile, name])
   @@index([storeId, order])
+  @@index([storeId, profile])
 }
 
 model ChecklistItem {
@@ -125,6 +138,7 @@ model ChecklistItem {
 model Trainee {
   id               String                    @id @default(cuid())
   storeId          String
+  profile          Profile                   @default(FOH)
   name             String
   startDate        DateTime
   createdAt        DateTime                  @default(now())
@@ -134,6 +148,7 @@ model Trainee {
   workflowComments WorkflowGeneralComments[]
 
   @@index([storeId, name])
+  @@index([storeId, profile])
 }
 
 /** Free-form workflow notes for a trainee on a given checklist position (not tied to assignment rows). */
@@ -183,6 +198,7 @@ model TrainingProgress {
 model TaskRow {
   id        String     @id @default(cuid())
   storeId   String
+  profile   Profile    @default(FOH)
   label     String     @default("")
   order     Int        @default(0)
   createdAt DateTime   @default(now())
@@ -190,6 +206,7 @@ model TaskRow {
   cells     TaskCell[]
 
   @@index([storeId, order])
+  @@index([storeId, profile])
 }
 
 /**
@@ -217,13 +234,15 @@ model TaskCell {
 model TaskPreset {
   id        String   @id @default(cuid())
   storeId   String
+  profile   Profile  @default(FOH)
   text      String
   order     Int      @default(0)
   createdAt DateTime @default(now())
   store     Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
 
-  @@unique([storeId, text])
+  @@unique([storeId, profile, text])
   @@index([storeId, order])
+  @@index([storeId, profile])
 }
 
 /**
@@ -234,12 +253,14 @@ model TaskPreset {
 model TaskWeekArchive {
   id         String   @id @default(cuid())
   storeId    String
+  profile    Profile  @default(FOH)
   label      String
   data       Json
   archivedAt DateTime @default(now())
   store      Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
 
   @@index([storeId, archivedAt])
+  @@index([storeId, profile])
 }
 
 model ActivityLog {

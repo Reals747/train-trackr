@@ -2,11 +2,23 @@
 
 import { useEffect, useState } from "react";
 import { api } from "./api";
+import { ProfileSelect } from "./ProfileSelect";
+import type { ActiveProfile, DataProfile } from "./types";
 
-export function AddTraineeModalFlow({ onRefresh }: { onRefresh: () => Promise<void> }) {
+export function AddTraineeModalFlow({
+  onRefresh,
+  activeProfile,
+}: {
+  onRefresh: () => Promise<void>;
+  activeProfile: ActiveProfile;
+}) {
   const [name, setName] = useState("");
+  const [profile, setProfile] = useState<DataProfile>("FOH");
   const [err, setErr] = useState("");
   const [addTraineeOpen, setAddTraineeOpen] = useState(false);
+  const showProfilePicker = activeProfile === "BOTH";
+  const defaultProfile: DataProfile =
+    activeProfile === "BOH" ? "BOH" : "FOH";
 
   useEffect(() => {
     if (!addTraineeOpen) return;
@@ -25,6 +37,7 @@ export function AddTraineeModalFlow({ onRefresh }: { onRefresh: () => Promise<vo
         onClick={() => {
           setErr("");
           setName("");
+          setProfile(defaultProfile);
           setAddTraineeOpen(true);
         }}
       >
@@ -54,9 +67,11 @@ export function AddTraineeModalFlow({ onRefresh }: { onRefresh: () => Promise<vo
                 e.preventDefault();
                 setErr("");
                 try {
+                  const body: { name: string; profile?: DataProfile } = { name };
+                  if (showProfilePicker) body.profile = profile;
                   await api("/api/trainees", {
                     method: "POST",
-                    body: JSON.stringify({ name }),
+                    body: JSON.stringify(body),
                   });
                   setName("");
                   setAddTraineeOpen(false);
@@ -79,6 +94,13 @@ export function AddTraineeModalFlow({ onRefresh }: { onRefresh: () => Promise<vo
                 required
                 autoComplete="name"
               />
+              {showProfilePicker ? (
+                <ProfileSelect
+                  id="add-trainee-profile"
+                  value={profile}
+                  onChange={setProfile}
+                />
+              ) : null}
               {err && <p className="text-sm text-rose-600">{err}</p>}
               <div className="flex flex-wrap justify-end gap-2 pt-1">
                 <button

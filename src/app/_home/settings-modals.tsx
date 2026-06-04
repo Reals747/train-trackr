@@ -3,7 +3,8 @@
 import { useEffect, useState } from "react";
 import { roleLabel, type RoleName } from "@/lib/permissions";
 import { WarningTriangleIcon } from "./icons";
-import type { DashboardRow, StoreCodeKickScope } from "./types";
+import { ProfileSelect } from "./ProfileSelect";
+import type { ActiveProfile, DashboardRow, DataProfile, StoreCodeKickScope } from "./types";
 
 export function TrainerInviteModal({
   storeCode,
@@ -440,18 +441,22 @@ export function DeleteTraineeConfirmModal({
 
 export function EditTraineeModal({
   trainee,
+  activeProfile,
   busy,
   error,
   onClose,
   onSave,
 }: {
   trainee: DashboardRow;
+  activeProfile: ActiveProfile;
   busy: boolean;
   error: string;
   onClose: () => void;
-  onSave: (nextName: string) => void | Promise<void>;
+  onSave: (payload: { name: string; profile?: DataProfile }) => void | Promise<void>;
 }) {
+  const showProfilePicker = activeProfile === "BOTH";
   const [name, setName] = useState(trainee.name);
+  const [profile, setProfile] = useState<DataProfile>(trainee.profile);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -485,7 +490,11 @@ export function EditTraineeModal({
             e.preventDefault();
             const trimmed = name.trim();
             if (trimmed.length < 2) return;
-            void onSave(trimmed);
+            const payload: { name: string; profile?: DataProfile } = { name: trimmed };
+            if (showProfilePicker && profile !== trainee.profile) {
+              payload.profile = profile;
+            }
+            void onSave(payload);
           }}
         >
           <label htmlFor="edit-trainee-name" className="sr-only">
@@ -502,6 +511,13 @@ export function EditTraineeModal({
             minLength={2}
             autoComplete="name"
           />
+          {showProfilePicker ? (
+            <ProfileSelect
+              id="edit-trainee-profile"
+              value={profile}
+              onChange={setProfile}
+            />
+          ) : null}
           {error && <p className="text-sm text-rose-600">{error}</p>}
           <div className="flex flex-wrap justify-end gap-2 pt-1">
             <button

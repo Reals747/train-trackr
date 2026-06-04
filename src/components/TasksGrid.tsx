@@ -33,17 +33,27 @@ export function ExpandIcon({ className }: { className?: string }) {
   );
 }
 
-export function TasksGrid({ onExpand }: { onExpand?: () => void }) {
+type ActiveProfile = "FOH" | "BOH" | "BOTH";
+
+export function TasksGrid({
+  onExpand,
+  activeProfile = "FOH",
+}: {
+  onExpand?: () => void;
+  activeProfile?: ActiveProfile;
+}) {
   const [rows, setRows] = useState<GridRow[]>([]);
 
   const load = useCallback(async () => {
     try {
-      const data = await clientApi<{ rows: GridRow[] }>("/api/tasks");
+      const data = await clientApi<{ rows: GridRow[] }>(
+        `/api/tasks?profile=${encodeURIComponent(activeProfile)}`,
+      );
       setRows(data.rows);
     } catch {
       // Non-fatal; keep showing whatever we have. The API returns a clear message on setup issues.
     }
-  }, []);
+  }, [activeProfile]);
 
   useEffect(() => {
     void load();

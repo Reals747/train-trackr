@@ -73,6 +73,7 @@ export async function POST(request: Request) {
         storeId: store.id,
         storeName: store.name,
         storeCode: store.storeCode,
+        activeProfile: user.activeProfile ?? "FOH",
       },
     });
   } catch (error) {

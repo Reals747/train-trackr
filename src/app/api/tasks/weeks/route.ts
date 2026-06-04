@@ -1,8 +1,9 @@
-import { Prisma } from "@prisma/client";
+import { Prisma, Profile } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { format } from "date-fns";
 import { errorResponse, requireAuth, STORE_MANAGER_ROLES } from "@/lib/api";
+import { activeProfileFromRequest, profileWhere } from "@/lib/profile";
 import { prisma, prismaHasTaskRow } from "@/lib/prisma";
 import { handleTasksError, staleClientError } from "@/lib/tasks-api";
 import { buildArchiveData } from "@/lib/tasks-server";
@@ -18,9 +19,13 @@ function defaultLabel(): string {
  * multiple weeks archived on the same day are distinguishable (e.g. "Week of May 31, 2026",
  * "Week of May 31, 2026 (1)").
  */
-async function uniqueLabel(storeId: string, base: string): Promise<string> {
+async function uniqueLabel(
+  storeId: string,
+  base: string,
+  profile: Profile,
+): Promise<string> {
   const existing = await prisma.taskWeekArchive.findMany({
-    where: { storeId, label: { startsWith: base } },
+    where: { storeId, profile, label: { startsWith: base } },
     select: { label: true },
   });
   const taken = new Set(existing.map((w) => w.label));
@@ -31,14 +36,16 @@ async function uniqueLabel(storeId: string, base: string): Promise<string> {
 }
 
 /** List archived weeks (most recent first). Summaries only — fetch one for its grid. */
-export async function GET() {
+export async function GET(request: Request) {
   const { user, error } = await requireAuth();
   if (error) return error;
   if (!prismaHasTaskRow()) return staleClientError();
 
+  const active = activeProfileFromRequest(request, user.activeProfile);
+
   try {
     const weeks = await prisma.taskWeekArchive.findMany({
-      where: { storeId: user.storeId },
+      where: { storeId: user.storeId, ...profileWhere(active) },
       orderBy: { archivedAt: "desc" },
       select: { id: true, label: true, archivedAt: true },
     });
@@ -61,16 +68,32 @@ export async function POST(request: Request) {
   if (!parsed.success) return errorResponse("Invalid week payload");
   if (!prismaHasTaskRow()) return staleClientError();
 
+  const active = activeProfileFromRequest(request, user.activeProfile);
+  if (active === "BOTH") {
+    return errorResponse("Switch to FOH or BOH before starting a new week");
+  }
+
   try {
-    const data = await buildArchiveData(user.storeId);
-    const label = await uniqueLabel(user.storeId, parsed.data.label?.trim() || defaultLabel());
+    const data = await buildArchiveData(user.storeId, active);
+    const label = await uniqueLabel(
+      user.storeId,
+      parsed.data.label?.trim() || defaultLabel(),
+      active,
+    );
 
     const [week] = await prisma.$transaction([
       prisma.taskWeekArchive.create({
-        data: { storeId: user.storeId, label, data: data as unknown as Prisma.InputJsonValue },
+        data: {
+          storeId: user.storeId,
+          profile: active,
+          label,
+          data: data as unknown as Prisma.InputJsonValue,
+        },
         select: { id: true, label: true, archivedAt: true },
       }),
-      prisma.taskCell.deleteMany({ where: { row: { storeId: user.storeId } } }),
+      prisma.taskCell.deleteMany({
+        where: { row: { storeId: user.storeId, profile: active } },
+      }),
     ]);
     return NextResponse.json({ week });
   } catch (e) {

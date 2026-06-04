@@ -2,19 +2,26 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { ProfileToggle } from "@/app/_home/ProfileToggle";
+import type { ActiveProfile } from "@/app/_home/types";
 import { clientApi } from "@/lib/client-api";
 import { MANAGER_ROLES, type RoleName } from "@/lib/permissions";
 import { TasksManager } from "@/components/TasksManager";
 
 export default function TasksFullPage() {
   const [role, setRole] = useState<RoleName | null>(null);
+  const [activeProfile, setActiveProfile] = useState<ActiveProfile>("FOH");
+  const [profileSaving, setProfileSaving] = useState(false);
   const [manageMode, setManageMode] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
-    clientApi<{ user: { role: RoleName } }>("/api/auth/me")
+    clientApi<{ user: { role: RoleName; activeProfile?: ActiveProfile } }>("/api/auth/me")
       .then((data) => {
-        if (!cancelled) setRole(data.user.role);
+        if (!cancelled) {
+          setRole(data.user.role);
+          if (data.user.activeProfile) setActiveProfile(data.user.activeProfile);
+        }
       })
       .catch(() => {
         if (!cancelled) setRole(null);
@@ -24,13 +31,35 @@ export default function TasksFullPage() {
     };
   }, []);
 
+  const handleActiveProfileChange = async (next: ActiveProfile) => {
+    if (next === activeProfile || profileSaving) return;
+    const prev = activeProfile;
+    setActiveProfile(next);
+    setProfileSaving(true);
+    try {
+      await clientApi("/api/settings/profile", {
+        method: "PUT",
+        body: JSON.stringify({ activeProfile: next }),
+      });
+    } catch {
+      setActiveProfile(prev);
+    } finally {
+      setProfileSaving(false);
+    }
+  };
+
   const canManage = role !== null && MANAGER_ROLES.includes(role);
 
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-6xl flex-col gap-4 p-3 sm:p-6">
       <div className="flex items-center justify-between gap-2">
         <h1 className="text-xl font-semibold">Tasks</h1>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <ProfileToggle
+            value={activeProfile}
+            onChange={handleActiveProfileChange}
+            disabled={profileSaving}
+          />
           {canManage && (
             <button
               type="button"
@@ -54,7 +83,7 @@ export default function TasksFullPage() {
         </div>
       </div>
       <section className="rounded-xl bg-card p-4 shadow-sm">
-        <TasksManager manageMode={manageMode} />
+        <TasksManager manageMode={manageMode} activeProfile={activeProfile} />
       </section>
     </main>
   );

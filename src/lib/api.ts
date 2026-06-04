@@ -25,7 +25,14 @@ export async function requireAuth(options?: RequireAuthOptions | Role[]) {
 
   const dbUser = await prisma.user.findUnique({
     where: { id: tokenUser.userId },
-    select: { id: true, username: true, role: true, storeId: true, name: true },
+    select: {
+      id: true,
+      username: true,
+      role: true,
+      storeId: true,
+      name: true,
+      activeProfile: true,
+    },
   });
   if (!dbUser) {
     return { error: errorResponse("Unauthorized", 401) };
@@ -47,6 +54,7 @@ export async function requireAuth(options?: RequireAuthOptions | Role[]) {
     role: dbUser.role,
     storeId: dbUser.storeId,
     name: dbUser.name,
+    activeProfile: dbUser.activeProfile,
   };
 
   return { user };

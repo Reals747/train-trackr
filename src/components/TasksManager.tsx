@@ -384,7 +384,16 @@ function PastWeekModal({
 
 /* ------------------------------------------------------------------ Main manager */
 
-export function TasksManager({ manageMode }: { manageMode: boolean }) {
+type ActiveProfile = "FOH" | "BOH" | "BOTH";
+
+export function TasksManager({
+  manageMode,
+  activeProfile = "FOH",
+}: {
+  manageMode: boolean;
+  activeProfile?: ActiveProfile;
+}) {
+  const profileQuery = `?profile=${encodeURIComponent(activeProfile)}`;
   const [rows, setRows] = useState<GridRow[]>([]);
   const [presets, setPresets] = useState<TaskPresetDto[]>([]);
   const [weeks, setWeeks] = useState<WeekArchiveSummary[]>([]);
@@ -412,30 +421,34 @@ export function TasksManager({ manageMode }: { manageMode: boolean }) {
 
   const loadGrid = useCallback(async () => {
     try {
-      const data = await clientApi<{ rows: GridRow[] }>("/api/tasks");
+      const data = await clientApi<{ rows: GridRow[] }>(`/api/tasks${profileQuery}`);
       setRows(data.rows);
     } catch {
       // keep current
     }
-  }, []);
+  }, [profileQuery]);
 
   const loadPresets = useCallback(async () => {
     try {
-      const data = await clientApi<{ presets: TaskPresetDto[] }>("/api/tasks/presets");
+      const data = await clientApi<{ presets: TaskPresetDto[] }>(
+        `/api/tasks/presets${profileQuery}`,
+      );
       setPresets(data.presets);
     } catch {
       // keep current
     }
-  }, []);
+  }, [profileQuery]);
 
   const loadWeeks = useCallback(async () => {
     try {
-      const data = await clientApi<{ weeks: WeekArchiveSummary[] }>("/api/tasks/weeks");
+      const data = await clientApi<{ weeks: WeekArchiveSummary[] }>(
+        `/api/tasks/weeks${profileQuery}`,
+      );
       setWeeks(data.weeks);
     } catch {
       // keep current
     }
-  }, []);
+  }, [profileQuery]);
 
   useEffect(() => {
     void loadGrid();
@@ -495,10 +508,14 @@ export function TasksManager({ manageMode }: { manageMode: boolean }) {
   /* ---- row helpers ---- */
 
   const addRow = async () => {
+    const body: { profile?: "FOH" | "BOH" } = {};
+    if (activeProfile === "FOH" || activeProfile === "BOH") {
+      body.profile = activeProfile;
+    }
     try {
       const data = await clientApi<{ row: { id: string; label: string; order: number } }>(
         "/api/tasks/rows",
-        { method: "POST", body: JSON.stringify({}) },
+        { method: "POST", body: JSON.stringify(body) },
       );
       setRows((prev) => [...prev, { ...data.row, cells: {} }]);
     } catch {
@@ -548,10 +565,14 @@ export function TasksManager({ manageMode }: { manageMode: boolean }) {
   /* ---- preset helpers ---- */
 
   const addPreset = async (text: string) => {
+    const body: { text: string; profile?: "FOH" | "BOH" } = { text };
+    if (activeProfile === "FOH" || activeProfile === "BOH") {
+      body.profile = activeProfile;
+    }
     try {
       const data = await clientApi<{ preset: TaskPresetDto }>("/api/tasks/presets", {
         method: "POST",
-        body: JSON.stringify({ text }),
+        body: JSON.stringify(body),
       });
       setPresets((prev) =>
         prev.some((p) => p.id === data.preset.id) ? prev : [...prev, data.preset],

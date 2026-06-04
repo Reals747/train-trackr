@@ -78,6 +78,7 @@ export async function POST(request: Request) {
         storeId: userRow.storeId,
         storeName: store.name,
         storeCode,
+        activeProfile: userRow.activeProfile ?? "FOH",
       },
     });
   } catch (error) {

@@ -2,10 +2,19 @@ import { Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { errorResponse, requireAuth, STORE_MANAGER_ROLES } from "@/lib/api";
+import {
+  activeProfileFromRequest,
+  profileSchema,
+  profileWhere,
+  resolveWriteProfile,
+} from "@/lib/profile";
 import { prisma, prismaHasTaskRow } from "@/lib/prisma";
 import { handleTasksError, staleClientError } from "@/lib/tasks-api";
 
-const postSchema = z.object({ text: z.string().trim().min(1).max(2000) });
+const postSchema = z.object({
+  text: z.string().trim().min(1).max(2000),
+  profile: profileSchema.optional(),
+});
 
 const patchSchema = z.union([
   z.object({ id: z.string().min(1), text: z.string().trim().min(1).max(2000) }),
@@ -15,14 +24,16 @@ const patchSchema = z.union([
 const deleteSchema = z.object({ id: z.string().min(1) });
 
 /** List the store's preset bank (autocomplete + drag cards). Readable by everyone. */
-export async function GET() {
+export async function GET(request: Request) {
   const { user, error } = await requireAuth();
   if (error) return error;
   if (!prismaHasTaskRow()) return staleClientError();
 
+  const active = activeProfileFromRequest(request, user.activeProfile);
+
   try {
     const presets = await prisma.taskPreset.findMany({
-      where: { storeId: user.storeId },
+      where: { storeId: user.storeId, ...profileWhere(active) },
       orderBy: [{ order: "asc" }, { createdAt: "asc" }],
       select: { id: true, text: true, order: true },
     });
@@ -41,19 +52,29 @@ export async function POST(request: Request) {
   if (!parsed.success) return errorResponse("Invalid preset payload");
   if (!prismaHasTaskRow()) return staleClientError();
 
+  const profile = resolveWriteProfile(user.activeProfile, parsed.data.profile);
+  if (!profile) return errorResponse("Select FOH or BOH profile for this preset");
+
   try {
     const existing = await prisma.taskPreset.findUnique({
-      where: { storeId_text: { storeId: user.storeId, text: parsed.data.text } },
+      where: {
+        storeId_profile_text: { storeId: user.storeId, profile, text: parsed.data.text },
+      },
       select: { id: true, text: true, order: true },
     });
     if (existing) return NextResponse.json({ preset: existing });
 
     const max = await prisma.taskPreset.aggregate({
-      where: { storeId: user.storeId },
+      where: { storeId: user.storeId, profile },
       _max: { order: true },
     });
     const preset = await prisma.taskPreset.create({
-      data: { storeId: user.storeId, text: parsed.data.text, order: (max._max.order ?? -1) + 1 },
+      data: {
+        storeId: user.storeId,
+        profile,
+        text: parsed.data.text,
+        order: (max._max.order ?? -1) + 1,
+      },
       select: { id: true, text: true, order: true },
     });
     return NextResponse.json({ preset });
@@ -73,8 +94,9 @@ export async function PATCH(request: Request) {
 
   try {
     if ("orderedIds" in parsed.data) {
+      const active = activeProfileFromRequest(request, user.activeProfile);
       const owned = await prisma.taskPreset.findMany({
-        where: { storeId: user.storeId, id: { in: parsed.data.orderedIds } },
+        where: { storeId: user.storeId, ...profileWhere(active), id: { in: parsed.data.orderedIds } },
         select: { id: true },
       });
       const ownedIds = new Set(owned.map((p) => p.id));

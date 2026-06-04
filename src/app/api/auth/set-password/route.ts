@@ -129,6 +129,7 @@ export async function POST(request: Request) {
         storeId: updated.storeId,
         storeName: updated.store.name,
         storeCode: updated.store.storeCode,
+        activeProfile: updated.activeProfile ?? "FOH",
       },
     });
   } catch (error) {

@@ -4,6 +4,7 @@ import { errorResponse, requireAuth, STORE_MANAGER_ROLES } from "@/lib/api";
 import { prisma, prismaHasTaskRow } from "@/lib/prisma";
 import { TASK_COLUMN_COUNT, setTaskDone } from "@/lib/tasks";
 import { handleTasksError, staleClientError } from "@/lib/tasks-api";
+import { activeProfileFromRequest } from "@/lib/profile";
 import { addPresetsFromContent, loadGrid, rowBelongsToStore } from "@/lib/tasks-server";
 
 const putSchema = z.object({
@@ -19,13 +20,15 @@ const patchSchema = z.object({
   done: z.boolean(),
 });
 
-export async function GET() {
+export async function GET(request: Request) {
   const { user, error } = await requireAuth();
   if (error) return error;
   if (!prismaHasTaskRow()) return staleClientError();
 
+  const active = activeProfileFromRequest(request, user.activeProfile);
+
   try {
-    const rows = await loadGrid(user.storeId);
+    const rows = await loadGrid(user.storeId, active);
     return NextResponse.json({ rows });
   } catch (e) {
     return handleTasksError("[tasks GET]", e, "Could not load tasks");
@@ -43,7 +46,11 @@ export async function PUT(request: Request) {
   const { rowId, colIndex, content } = parsed.data;
 
   try {
-    if (!(await rowBelongsToStore(rowId, user.storeId))) {
+    const row = await prisma.taskRow.findUnique({
+      where: { id: rowId },
+      select: { storeId: true, profile: true },
+    });
+    if (!row || row.storeId !== user.storeId) {
       return errorResponse("Row not found", 404);
     }
 
@@ -53,7 +60,7 @@ export async function PUT(request: Request) {
       update: { content },
       select: { rowId: true, colIndex: true, content: true },
     });
-    await addPresetsFromContent(user.storeId, content);
+    await addPresetsFromContent(user.storeId, content, row.profile);
     return NextResponse.json({ cell });
   } catch (e) {
     return handleTasksError("[tasks PUT]", e, "Could not save task");

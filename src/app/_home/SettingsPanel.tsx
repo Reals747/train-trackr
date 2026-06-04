@@ -25,9 +25,11 @@ import {
 import { TrainingSetupSection } from "./TrainingSetupSection";
 import type {
   AccountDetails,
+  ActiveProfile,
   AppearanceSettings,
   AppUser,
   DashboardRow,
+  DataProfile,
   Position,
   Role,
   SettingsCategory,
@@ -38,6 +40,7 @@ import type {
 
 export function SettingsPanel({
   user,
+  activeProfile,
   setUser,
   accountDetails,
   setAccountDetails,
@@ -58,6 +61,7 @@ export function SettingsPanel({
   onLogout,
 }: {
   user: AppUser;
+  activeProfile: ActiveProfile;
   setUser: Dispatch<SetStateAction<AppUser | null>>;
   accountDetails: AccountDetails | null;
   setAccountDetails: Dispatch<SetStateAction<AccountDetails | null>>;
@@ -657,6 +661,7 @@ export function SettingsPanel({
               positions={positions}
               setPositions={setPositions}
               onRefresh={refreshCore}
+              activeProfile={activeProfile}
             />
           )}
 
@@ -985,7 +990,9 @@ export function SettingsPanel({
                     their progress.
                   </p>
                 </div>
-                {canCreateTrainees ? <AddTraineeModalFlow onRefresh={refreshCore} /> : null}
+                {canCreateTrainees ? (
+                  <AddTraineeModalFlow onRefresh={refreshCore} activeProfile={activeProfile} />
+                ) : null}
               </div>
               {traineeActionError && !traineePendingDelete && (
                 <p className="mb-2 text-sm text-rose-600">{traineeActionError}</p>
@@ -1117,6 +1124,7 @@ export function SettingsPanel({
         <EditTraineeModal
           key={traineePendingEdit.id}
           trainee={traineePendingEdit}
+          activeProfile={activeProfile}
           busy={savingTraineeId === traineePendingEdit.id}
           error={traineeActionError}
           onClose={() => {
@@ -1124,15 +1132,17 @@ export function SettingsPanel({
             setTraineePendingEdit(null);
             setTraineeActionError("");
           }}
-          onSave={async (nextName) => {
+          onSave={async ({ name: nextName, profile: nextProfile }) => {
             const row = traineePendingEdit;
             if (!row || savingTraineeId) return;
             setTraineeActionError("");
             setSavingTraineeId(row.id);
             try {
+              const body: { name: string; profile?: DataProfile } = { name: nextName };
+              if (nextProfile) body.profile = nextProfile;
               await api(`/api/trainees/${row.id}`, {
                 method: "PUT",
-                body: JSON.stringify({ name: nextName }),
+                body: JSON.stringify(body),
               });
               setTraineePendingEdit(null);
               await refreshCore();

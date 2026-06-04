@@ -115,6 +115,7 @@ async function issueSession(
     role: Role;
     storeId: string;
     name: string;
+    activeProfile?: string;
     store: { name: string; storeCode: string };
   },
 ) {
@@ -135,6 +136,7 @@ async function issueSession(
       storeId: user.storeId,
       storeName: user.store.name,
       storeCode: user.store.storeCode,
+      activeProfile: user.activeProfile ?? "FOH",
     },
   });
 }

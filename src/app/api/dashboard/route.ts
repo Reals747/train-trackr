@@ -1,4 +1,5 @@
 import { requireAuth } from "@/lib/api";
+import { activeProfileFromRequest, profileWhere } from "@/lib/profile";
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
 
@@ -14,20 +15,23 @@ function checklistStatusFromCounts(
   return "partial";
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   const { user, error } = await requireAuth();
   if (error) return error;
 
+  const active = activeProfileFromRequest(request, user.activeProfile);
+  const profileFilter = profileWhere(active);
+
   const [trainees, storePositions] = await Promise.all([
     prisma.trainee.findMany({
-      where: { storeId: user.storeId },
+      where: { storeId: user.storeId, ...profileFilter },
       include: {
         progress: true,
       },
       orderBy: { createdAt: "desc" },
     }),
     prisma.position.findMany({
-      where: { storeId: user.storeId },
+      where: { storeId: user.storeId, ...profileFilter },
       orderBy: [{ order: "asc" }, { name: "asc" }],
       include: {
         // Section headers (kind: "header") are organizational only and never count
@@ -97,6 +101,7 @@ export async function GET() {
     return {
       id: trainee.id,
       name: trainee.name,
+      profile: trainee.profile,
       percentage,
       positionsFullyComplete,
       storePositionCount,

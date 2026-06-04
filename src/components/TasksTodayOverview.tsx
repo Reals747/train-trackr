@@ -18,7 +18,9 @@ function weekdayToColumnIndex(jsDay: number): number {
   return jsDay - 1;
 }
 
-export function TasksTodayOverview() {
+type ActiveProfile = "FOH" | "BOH" | "BOTH";
+
+export function TasksTodayOverview({ activeProfile = "FOH" }: { activeProfile?: ActiveProfile }) {
   const [rows, setRows] = useState<GridRow[]>([]);
   /** null until resolved on the client (avoids SSR/client hydration mismatch on the date). */
   const [todayColIndex, setTodayColIndex] = useState<number | null>(null);
@@ -29,12 +31,14 @@ export function TasksTodayOverview() {
 
   const load = useCallback(async () => {
     try {
-      const data = await clientApi<{ rows: GridRow[] }>("/api/tasks");
+      const data = await clientApi<{ rows: GridRow[] }>(
+        `/api/tasks?profile=${encodeURIComponent(activeProfile)}`,
+      );
       setRows(data.rows);
     } catch {
       // Non-fatal; keep showing whatever we have.
     }
-  }, []);
+  }, [activeProfile]);
 
   useEffect(() => {
     void load();

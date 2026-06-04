@@ -11,6 +11,8 @@ import { api } from "./_home/api";
 import { ACCENT_SWATCHES, DEFAULT_APPEARANCE } from "./_home/appearance";
 import { ActivityHistoryIcon, SettingsGearIcon } from "./_home/icons";
 import { AuthScreen } from "./_home/AuthScreen";
+import { ProfileToggle } from "./_home/ProfileToggle";
+import { withProfileQuery } from "./_home/profile-query";
 import { SettingsPanel } from "./_home/SettingsPanel";
 import { TraineeDashboardModal } from "./_home/TraineeDashboardModal";
 import { UnderDevelopmentNotice } from "./_home/UnderDevelopmentNotice";
@@ -19,6 +21,7 @@ import type {
   ActivityLog,
   AnnouncementRow,
   AppearanceSettings,
+  ActiveProfile,
   AppUser,
   DashboardRow,
   Position,
@@ -55,6 +58,8 @@ export default function Home() {
       ? window.matchMedia("(prefers-color-scheme: dark)").matches
       : false,
   );
+  const [activeProfile, setActiveProfile] = useState<ActiveProfile>("FOH");
+  const [profileSaving, setProfileSaving] = useState(false);
 
   const canViewActivity = can(user?.role, "activity.view");
   /** Same gate as Settings → Trainee Management (owner/admin). */
@@ -69,11 +74,15 @@ export default function Home() {
     return () => mq.removeEventListener("change", sync);
   }, []);
 
+  const activeProfileRef = useRef(activeProfile);
+  activeProfileRef.current = activeProfile;
+
   const refreshCore = useCallback(async () => {
+    const pq = (path: string) => withProfileQuery(path, activeProfileRef.current);
     const [positionsRes, traineesRes, dashboardRes, accountRes, annRes] = await Promise.all([
-      api<{ positions: Position[] }>("/api/positions"),
-      api<{ trainees: Trainee[] }>("/api/trainees"),
-      api<{ trainees: DashboardRow[] }>("/api/dashboard"),
+      api<{ positions: Position[] }>(pq("/api/positions")),
+      api<{ trainees: Trainee[] }>(pq("/api/trainees")),
+      api<{ trainees: DashboardRow[] }>(pq("/api/dashboard")),
       api<{ account: AccountDetails }>("/api/settings/account"),
       api<{ announcements: AnnouncementRow[] }>("/api/announcements"),
     ]);
@@ -137,6 +146,9 @@ export default function Home() {
       }
       if (cancelled || !authDone) return;
       setUser(authedUser);
+      if (authedUser?.activeProfile) {
+        setActiveProfile(authedUser.activeProfile);
+      }
       setSessionResolved(true);
       if (authedUser) {
         void refreshCoreRef.current().catch(() => undefined);
@@ -215,6 +227,11 @@ export default function Home() {
   }, [appearance, user, appearanceReady]);
 
   useEffect(() => {
+    if (!user) return;
+    void refreshCore().catch(() => undefined);
+  }, [activeProfile, user?.id, refreshCore]);
+
+  useEffect(() => {
     const interval = setInterval(() => {
       if (user) {
         refreshCore().catch(() => undefined);
@@ -222,6 +239,25 @@ export default function Home() {
     }, 5000);
     return () => clearInterval(interval);
   }, [user, refreshCore]);
+
+  const handleActiveProfileChange = async (next: ActiveProfile) => {
+    if (next === activeProfile || profileSaving) return;
+    const prev = activeProfile;
+    setActiveProfile(next);
+    setProfileSaving(true);
+    try {
+      await api("/api/settings/profile", {
+        method: "PUT",
+        body: JSON.stringify({ activeProfile: next }),
+      });
+      setUser((u) => (u ? { ...u, activeProfile: next } : u));
+      await refreshCore();
+    } catch {
+      setActiveProfile(prev);
+    } finally {
+      setProfileSaving(false);
+    }
+  };
 
   const isTraineeChecklistComplete = useCallback((row: DashboardRow) => row.percentage >= 100, []);
 
@@ -263,6 +299,7 @@ export default function Home() {
       <AuthScreen
         onLoggedIn={(nextUser) => {
           setUser(nextUser);
+          if (nextUser.activeProfile) setActiveProfile(nextUser.activeProfile);
           void refreshCore().catch(() => undefined);
         }}
         onError={setError}
@@ -279,7 +316,12 @@ export default function Home() {
             <h1 className="text-2xl font-bold">Train Trackr</h1>
             <p className="text-sm opacity-75">{user.storeName} - {user.name} ({user.role})</p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <ProfileToggle
+              value={activeProfile}
+              onChange={handleActiveProfileChange}
+              disabled={profileSaving}
+            />
             {canViewActivity ? (
               <button
                 type="button"
@@ -353,7 +395,7 @@ export default function Home() {
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
               <h2 className="text-lg font-semibold">Tasks Overview</h2>
             </div>
-            <TasksTodayOverview />
+            <TasksTodayOverview activeProfile={activeProfile} />
           </section>
           <section className="rounded-xl bg-card p-4 shadow-sm lg:min-w-0 lg:flex-1">
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
@@ -450,7 +492,7 @@ export default function Home() {
             <h2 className="text-lg font-semibold">Tasks</h2>
             <button
               type="button"
-              onClick={() => router.push("/tasks")}
+              onClick={() => router.push(`/tasks?profile=${encodeURIComponent(activeProfile)}`)}
               aria-label="Open tasks in full page"
               title="Open in full page"
               className="inline-flex items-center gap-1.5 rounded-lg bg-slate-100 px-3 py-2 text-sm font-medium text-slate-900 hover:bg-slate-200/90 dark:bg-slate-700 dark:text-slate-100 dark:hover:bg-slate-600"
@@ -459,7 +501,7 @@ export default function Home() {
               Expand
             </button>
           </div>
-          <TasksGrid />
+          <TasksGrid activeProfile={activeProfile} />
         </section>
       )}
 
@@ -498,6 +540,7 @@ export default function Home() {
       {tab === "settings" && (
         <SettingsPanel
           user={user}
+          activeProfile={activeProfile}
           setUser={setUser}
           accountDetails={accountDetails}
           setAccountDetails={setAccountDetails}

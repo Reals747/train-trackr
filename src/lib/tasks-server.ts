@@ -1,4 +1,6 @@
+import { Profile } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { profileWhere, type ActiveProfile } from "@/lib/profile";
 import {
   TASK_DAYS,
   type GridRow,
@@ -7,9 +9,12 @@ import {
 } from "@/lib/tasks";
 
 /** Load the live grid (rows + their day cells) for a store, ordered for display. */
-export async function loadGrid(storeId: string): Promise<GridRow[]> {
+export async function loadGrid(
+  storeId: string,
+  active: ActiveProfile = "FOH",
+): Promise<GridRow[]> {
   const rows = await prisma.taskRow.findMany({
-    where: { storeId },
+    where: { storeId, ...profileWhere(active) },
     orderBy: [{ order: "asc" }, { createdAt: "asc" }],
     select: {
       id: true,
@@ -38,7 +43,11 @@ export async function rowBelongsToStore(rowId: string, storeId: string): Promise
  * Bank any task text found in `content` that isn't already a preset for this store.
  * Appended after existing presets. Best-effort: never throws into the caller's flow.
  */
-export async function addPresetsFromContent(storeId: string, content: string): Promise<void> {
+export async function addPresetsFromContent(
+  storeId: string,
+  content: string,
+  profile: Profile,
+): Promise<void> {
   const texts = Array.from(new Set(parseTaskLines(content).map((task) => task.text))).filter(
     (text) => text.length > 0,
   );
@@ -46,7 +55,7 @@ export async function addPresetsFromContent(storeId: string, content: string): P
 
   try {
     const existing = await prisma.taskPreset.findMany({
-      where: { storeId, text: { in: texts } },
+      where: { storeId, profile, text: { in: texts } },
       select: { text: true },
     });
     const have = new Set(existing.map((preset) => preset.text));
@@ -54,13 +63,13 @@ export async function addPresetsFromContent(storeId: string, content: string): P
     if (toAdd.length === 0) return;
 
     const max = await prisma.taskPreset.aggregate({
-      where: { storeId },
+      where: { storeId, profile },
       _max: { order: true },
     });
     let order = (max._max.order ?? -1) + 1;
 
     await prisma.taskPreset.createMany({
-      data: toAdd.map((text) => ({ storeId, text, order: order++ })),
+      data: toAdd.map((text) => ({ storeId, profile, text, order: order++ })),
       skipDuplicates: true,
     });
   } catch {
@@ -69,8 +78,11 @@ export async function addPresetsFromContent(storeId: string, content: string): P
 }
 
 /** Build the immutable snapshot stored when a week is archived. */
-export async function buildArchiveData(storeId: string): Promise<WeekArchiveData> {
-  const rows = await loadGrid(storeId);
+export async function buildArchiveData(
+  storeId: string,
+  active: ActiveProfile,
+): Promise<WeekArchiveData> {
+  const rows = await loadGrid(storeId, active);
   return {
     days: [...TASK_DAYS],
     rows: rows.map((row) => ({ label: row.label, cells: row.cells })),

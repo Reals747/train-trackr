@@ -1,4 +1,4 @@
-import { Role } from "@prisma/client";
+import { Profile, Role } from "@prisma/client";
 import { hashPassword } from "../src/lib/auth";
 import { prisma } from "../src/lib/prisma";
 import { generateUniqueStoreCode } from "../src/lib/store-code";
@@ -55,23 +55,45 @@ async function main() {
     },
   });
 
-  const windowPos = await prisma.position.create({ data: { storeId: store.id, name: "Window" } });
-  const baggingPos = await prisma.position.create({ data: { storeId: store.id, name: "Bagging" } });
+  const windowPos = await prisma.position.create({
+    data: { storeId: store.id, name: "Window", profile: Profile.FOH },
+  });
+  const baggingPos = await prisma.position.create({
+    data: { storeId: store.id, name: "Bagging", profile: Profile.FOH },
+  });
+  const prepPos = await prisma.position.create({
+    data: { storeId: store.id, name: "Prep Line", profile: Profile.BOH },
+  });
 
   const items = await prisma.$transaction([
     prisma.checklistItem.create({ data: { positionId: windowPos.id, text: "Greet guest within 3 seconds", order: 0 } }),
     prisma.checklistItem.create({ data: { positionId: windowPos.id, text: "Confirm order details", order: 1 } }),
     prisma.checklistItem.create({ data: { positionId: baggingPos.id, text: "Match bag label to order", order: 0 } }),
     prisma.checklistItem.create({ data: { positionId: baggingPos.id, text: "Verify sauces and napkins", order: 1 } }),
+    prisma.checklistItem.create({ data: { positionId: prepPos.id, text: "Sanitize prep surfaces", order: 0 } }),
+    prisma.checklistItem.create({ data: { positionId: prepPos.id, text: "Label and date prep items", order: 1 } }),
   ]);
 
   const trainee = await prisma.trainee.create({
     data: {
       storeId: store.id,
       name: "Jordan Team Member",
+      profile: Profile.FOH,
       startDate: new Date(),
       positions: {
         create: [{ positionId: windowPos.id }, { positionId: baggingPos.id }],
+      },
+    },
+  });
+
+  await prisma.trainee.create({
+    data: {
+      storeId: store.id,
+      name: "Alex BOH Trainee",
+      profile: Profile.BOH,
+      startDate: new Date(),
+      positions: {
+        create: [{ positionId: prepPos.id }],
       },
     },
   });

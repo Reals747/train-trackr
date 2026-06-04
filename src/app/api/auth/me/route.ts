@@ -23,6 +23,7 @@ export async function GET() {
       storeId: dbUser.storeId,
       storeName: dbUser.store.name,
       storeCode: dbUser.store.storeCode,
+      activeProfile: dbUser.activeProfile,
     },
   });
 }

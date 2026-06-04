@@ -2,6 +2,11 @@ import type { RoleName } from "@/lib/permissions";
 
 export type Role = RoleName;
 
+/** Stored on data rows. */
+export type DataProfile = "FOH" | "BOH";
+/** Per-user view filter. */
+export type ActiveProfile = DataProfile | "BOTH";
+
 export type AppUser = {
   id: string;
   name: string;
@@ -9,6 +14,7 @@ export type AppUser = {
   role: Role;
   storeName: string;
   storeCode: string;
+  activeProfile: ActiveProfile;
 };
 
 /** "header" rows are non-clickable section dividers and never count toward completion. */
@@ -17,6 +23,7 @@ export type ChecklistKind = "item" | "header";
 export type Position = {
   id: string;
   name: string;
+  profile: DataProfile;
   hidden: boolean;
   order: number;
   items: { id: string; text: string; description: string | null; kind: ChecklistKind }[];
@@ -25,6 +32,7 @@ export type Position = {
 export type Trainee = {
   id: string;
   name: string;
+  profile: DataProfile;
   startDate: string;
   positions: { positionId: string; position: { id: string; name: string } }[];
 };
@@ -43,6 +51,7 @@ export type DashboardPositionDetail = {
 export type DashboardRow = {
   id: string;
   name: string;
+  profile: DataProfile;
   percentage: number;
   positionsFullyComplete: number;
   storePositionCount: number;

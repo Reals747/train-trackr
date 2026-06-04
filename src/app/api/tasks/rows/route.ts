@@ -1,10 +1,19 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { errorResponse, requireAuth, STORE_MANAGER_ROLES } from "@/lib/api";
+import {
+  activeProfileFromRequest,
+  profileSchema,
+  profileWhere,
+  resolveWriteProfile,
+} from "@/lib/profile";
 import { prisma, prismaHasTaskRow } from "@/lib/prisma";
 import { handleTasksError, staleClientError } from "@/lib/tasks-api";
 
-const postSchema = z.object({ label: z.string().max(120).optional() });
+const postSchema = z.object({
+  label: z.string().max(120).optional(),
+  profile: profileSchema.optional(),
+});
 
 const patchSchema = z.union([
   z.object({ id: z.string().min(1), label: z.string().max(120) }),
@@ -22,14 +31,18 @@ export async function POST(request: Request) {
   if (!parsed.success) return errorResponse("Invalid row payload");
   if (!prismaHasTaskRow()) return staleClientError();
 
+  const profile = resolveWriteProfile(user.activeProfile, parsed.data.profile);
+  if (!profile) return errorResponse("Select FOH or BOH profile for this row");
+
   try {
     const max = await prisma.taskRow.aggregate({
-      where: { storeId: user.storeId },
+      where: { storeId: user.storeId, profile },
       _max: { order: true },
     });
     const row = await prisma.taskRow.create({
       data: {
         storeId: user.storeId,
+        profile,
         label: parsed.data.label ?? "",
         order: (max._max.order ?? -1) + 1,
       },
@@ -52,8 +65,9 @@ export async function PATCH(request: Request) {
 
   try {
     if ("orderedIds" in parsed.data) {
+      const active = activeProfileFromRequest(request, user.activeProfile);
       const owned = await prisma.taskRow.findMany({
-        where: { storeId: user.storeId, id: { in: parsed.data.orderedIds } },
+        where: { storeId: user.storeId, ...profileWhere(active), id: { in: parsed.data.orderedIds } },
         select: { id: true },
       });
       const ownedIds = new Set(owned.map((r) => r.id));

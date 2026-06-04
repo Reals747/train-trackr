@@ -25,6 +25,7 @@ type AppearanceSettings = {
 type DashboardRow = {
   id: string;
   name: string;
+  profile: "FOH" | "BOH";
   percentage: number;
   positionsFullyComplete: number;
   storePositionCount: number;
@@ -179,19 +180,26 @@ export function WorkflowSessionClient({
           setRow(found);
           if (!found) setLoadError("Trainee not found or you may not have access.");
           else setLoadError("");
+          if (found) {
+            try {
+              const posRes = await clientApi<{ positions: PositionOption[] }>(
+                `/api/positions?excludeHidden=1&profile=${encodeURIComponent(found.profile)}`,
+              );
+              if (!cancelled) {
+                setPositions(posRes.positions.map((p) => ({ id: p.id, name: p.name })));
+              }
+            } catch {
+              if (!cancelled) setPositions([]);
+            }
+          } else if (!cancelled) {
+            setPositions([]);
+          }
         } catch {
           if (!cancelled) {
             setRow(null);
             setLoadError("Could not load trainee progress.");
+            setPositions([]);
           }
-        }
-        try {
-          const posRes = await clientApi<{ positions: PositionOption[] }>(
-            "/api/positions?excludeHidden=1",
-          );
-          if (!cancelled) setPositions(posRes.positions.map((p) => ({ id: p.id, name: p.name })));
-        } catch {
-          if (!cancelled) setPositions([]);
         }
       } catch {
         if (!cancelled) {

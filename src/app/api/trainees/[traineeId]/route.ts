@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { errorResponse, requireAuth } from "@/lib/api";
+import { profileSchema } from "@/lib/profile";
 import { prisma } from "@/lib/prisma";
 
 const schema = z
@@ -8,6 +9,7 @@ const schema = z
     name: z.string().min(2).optional(),
     startDate: z.string().min(1).optional(),
     positionIds: z.array(z.string()).optional(),
+    profile: profileSchema.optional(),
   })
   .refine((value) => Object.values(value).some((v) => v !== undefined), {
     message: "At least one field must be provided",
@@ -29,12 +31,36 @@ export async function PUT(
   const parsed = schema.safeParse(await request.json());
   if (!parsed.success) return errorResponse("Invalid trainee payload");
 
+  const nextProfile = parsed.data.profile ?? trainee.profile;
+
+  if (parsed.data.positionIds !== undefined && parsed.data.positionIds.length > 0) {
+    const matching = await prisma.position.count({
+      where: {
+        storeId: user.storeId,
+        profile: nextProfile,
+        id: { in: parsed.data.positionIds },
+      },
+    });
+    if (matching !== parsed.data.positionIds.length) {
+      return errorResponse("All assigned positions must match the trainee profile", 400);
+    }
+  }
+
   const updated = await prisma.$transaction(async (tx) => {
-    const data: { name?: string; startDate?: Date } = {};
+    const data: { name?: string; startDate?: Date; profile?: typeof nextProfile } = {};
     if (parsed.data.name !== undefined) data.name = parsed.data.name.trim();
     if (parsed.data.startDate !== undefined) data.startDate = new Date(parsed.data.startDate);
+    if (parsed.data.profile !== undefined) data.profile = parsed.data.profile;
     if (Object.keys(data).length > 0) {
       await tx.trainee.update({ where: { id: traineeId }, data });
+    }
+    if (parsed.data.profile !== undefined && parsed.data.profile !== trainee.profile) {
+      await tx.traineePosition.deleteMany({
+        where: {
+          traineeId,
+          position: { profile: { not: parsed.data.profile } },
+        },
+      });
     }
     if (parsed.data.positionIds !== undefined) {
       await tx.traineePosition.deleteMany({ where: { traineeId } });

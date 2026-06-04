@@ -3,10 +3,17 @@ import { z } from "zod";
 import { errorResponse, requireAuth } from "@/lib/api";
 import { logActivity } from "@/lib/activity";
 import { can } from "@/lib/permissions";
+import {
+  activeProfileFromRequest,
+  profileSchema,
+  profileWhere,
+  resolveWriteProfile,
+} from "@/lib/profile";
 import { prisma } from "@/lib/prisma";
 
 const createSchema = z.object({
   name: z.string().min(2),
+  profile: profileSchema.optional(),
 });
 
 export async function GET(request: Request) {
@@ -21,9 +28,12 @@ export async function GET(request: Request) {
   /** Workflow checklist UI must never list hidden positions; Training Setup omits this param so managers still see all. */
   const includeHidden = can(user.role, "positions.manage") && !excludeHidden;
 
+  const active = activeProfileFromRequest(request, user.activeProfile);
+
   const positions = await prisma.position.findMany({
     where: {
       storeId: user.storeId,
+      ...profileWhere(active),
       ...(!includeHidden ? { hidden: false } : {}),
     },
     orderBy: [{ order: "asc" }, { name: "asc" }],
@@ -41,14 +51,20 @@ export async function POST(request: Request) {
   const parsed = createSchema.safeParse(await request.json());
   if (!parsed.success) return errorResponse("Position name is required");
 
+  const profile = resolveWriteProfile(user.activeProfile, parsed.data.profile);
+  if (!profile) {
+    return errorResponse("Select FOH or BOH profile for this position");
+  }
+
   try {
     const maxOrder = await prisma.position.aggregate({
-      where: { storeId: user.storeId },
+      where: { storeId: user.storeId, profile },
       _max: { order: true },
     });
     const position = await prisma.position.create({
       data: {
         storeId: user.storeId,
+        profile,
         name: parsed.data.name.trim(),
         order: (maxOrder._max.order ?? -1) + 1,
       },
