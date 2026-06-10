@@ -4,6 +4,7 @@ import { z } from "zod";
 import { hashPassword, setAuthCookie, signToken } from "@/lib/auth";
 import { jsonAuthRouteError } from "@/lib/auth-route-error-response";
 import { prisma } from "@/lib/prisma";
+import { normalizeActiveProfile } from "@/lib/profile";
 import { STORE_CODE_REGEX } from "@/lib/store-code";
 
 /**
@@ -129,7 +130,7 @@ export async function POST(request: Request) {
         storeId: updated.storeId,
         storeName: updated.store.name,
         storeCode: updated.store.storeCode,
-        activeProfile: updated.activeProfile ?? "FOH",
+        activeProfile: normalizeActiveProfile(updated.activeProfile),
       },
     });
   } catch (error) {

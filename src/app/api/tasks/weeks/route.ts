@@ -69,9 +69,6 @@ export async function POST(request: Request) {
   if (!prismaHasTaskRow()) return staleClientError();
 
   const active = activeProfileFromRequest(request, user.activeProfile);
-  if (active === "BOTH") {
-    return errorResponse("Switch to FOH or BOH before starting a new week");
-  }
 
   try {
     const data = await buildArchiveData(user.storeId, active);

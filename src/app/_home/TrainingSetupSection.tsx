@@ -34,7 +34,6 @@ import {
   PencilIcon,
   TrashIcon,
 } from "./icons";
-import { ProfileSelect } from "./ProfileSelect";
 import type { ActiveProfile, ChecklistKind, DataProfile, Position } from "./types";
 
 /** Positions and checklists — Settings → Training Setup (managers only). */
@@ -49,12 +48,8 @@ export function TrainingSetupSection({
   onRefresh: () => Promise<void>;
   activeProfile: ActiveProfile;
 }) {
-  const showProfilePicker = activeProfile === "BOTH";
-  const defaultProfile: DataProfile =
-    activeProfile === "BOH" ? "BOH" : "FOH";
   const [createOpen, setCreateOpen] = useState(false);
   const [createName, setCreateName] = useState("");
-  const [createProfile, setCreateProfile] = useState<DataProfile>("FOH");
   const [createErr, setCreateErr] = useState("");
   const [createSaving, setCreateSaving] = useState(false);
 
@@ -119,7 +114,6 @@ export function TrainingSetupSection({
           className="btn-accent shrink-0 rounded-lg px-4 py-2 font-medium"
           onClick={() => {
             setCreateName("");
-            setCreateProfile(defaultProfile);
             setCreateErr("");
             setCreateOpen(true);
           }}
@@ -155,15 +149,6 @@ export function TrainingSetupSection({
               placeholder="e.g. Front Counter"
               className="mb-3 w-full rounded-lg border bg-background p-3"
             />
-            {showProfilePicker ? (
-              <div className="mb-3">
-                <ProfileSelect
-                  id="create-position-profile"
-                  value={createProfile}
-                  onChange={setCreateProfile}
-                />
-              </div>
-            ) : null}
             {createErr && <p className="mb-3 text-sm text-rose-600">{createErr}</p>}
             <div className="flex justify-end gap-2">
               <button
@@ -186,8 +171,10 @@ export function TrainingSetupSection({
                   setCreateErr("");
                   setCreateSaving(true);
                   try {
-                    const body: { name: string; profile?: DataProfile } = { name };
-                    if (showProfilePicker) body.profile = createProfile;
+                    const body: { name: string; profile: DataProfile } = {
+                      name,
+                      profile: activeProfile,
+                    };
                     await api("/api/positions", {
                       method: "POST",
                       body: JSON.stringify(body),
@@ -227,7 +214,6 @@ export function TrainingSetupSection({
                 position={position}
                 setPositions={setPositions}
                 onRefresh={onRefresh}
-                showProfilePicker={showProfilePicker}
               />
             ))}
           </div>
@@ -241,12 +227,10 @@ function PositionTrainingRow({
   position,
   setPositions,
   onRefresh,
-  showProfilePicker,
 }: {
   position: Position;
   setPositions: Dispatch<SetStateAction<Position[]>>;
   onRefresh: () => Promise<void>;
-  showProfilePicker: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -257,7 +241,6 @@ function PositionTrainingRow({
   const [actionErr, setActionErr] = useState("");
   const [renameOpen, setRenameOpen] = useState(false);
   const [renameName, setRenameName] = useState(position.name);
-  const [renameProfile, setRenameProfile] = useState(position.profile);
   const [renameErr, setRenameErr] = useState("");
   const [editingItem, setEditingItem] = useState<
     { id: string; text: string; description: string; kind: ChecklistKind } | null
@@ -589,34 +572,23 @@ function PositionTrainingRow({
                   setRenameErr("Enter at least 2 characters.");
                   return;
                 }
-                const profileChanged =
-                  showProfilePicker && renameProfile !== position.profile;
-                if (name === position.name && !profileChanged) {
+                if (name === position.name) {
                   setRenameOpen(false);
                   return;
                 }
                 const previousName = position.name;
-                const previousProfile = position.profile;
                 setRenameErr("");
                 setRenameOpen(false);
                 setPositions((prev) =>
-                  prev.map((p) =>
-                    p.id === position.id
-                      ? { ...p, name, ...(profileChanged ? { profile: renameProfile } : {}) }
-                      : p,
-                  ),
+                  prev.map((p) => (p.id === position.id ? { ...p, name } : p)),
                 );
-                const body: { name: string; profile?: DataProfile } = { name };
-                if (profileChanged) body.profile = renameProfile;
                 api(`/api/positions/${position.id}`, {
                   method: "PUT",
-                  body: JSON.stringify(body),
+                  body: JSON.stringify({ name }),
                 }).catch((err) => {
                   setPositions((prev) =>
                     prev.map((p) =>
-                      p.id === position.id
-                        ? { ...p, name: previousName, profile: previousProfile }
-                        : p,
+                      p.id === position.id ? { ...p, name: previousName } : p,
                     ),
                   );
                   setActionErr(`Rename failed: ${(err as Error).message}`);
@@ -634,15 +606,6 @@ function PositionTrainingRow({
                 placeholder="e.g. Front Counter"
                 className="mb-3 w-full rounded-lg border bg-background p-3"
               />
-              {showProfilePicker ? (
-                <div className="mb-3">
-                  <ProfileSelect
-                    id={`edit-position-profile-${position.id}`}
-                    value={renameProfile}
-                    onChange={setRenameProfile}
-                  />
-                </div>
-              ) : null}
               {renameErr && <p className="mb-3 text-sm text-rose-600">{renameErr}</p>}
               <div className="flex justify-end gap-2">
                 <button

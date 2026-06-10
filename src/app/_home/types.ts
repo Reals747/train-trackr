@@ -4,8 +4,8 @@ export type Role = RoleName;
 
 /** Stored on data rows. */
 export type DataProfile = "FOH" | "BOH";
-/** Per-user view filter. */
-export type ActiveProfile = DataProfile | "BOTH";
+/** Per-user view filter. Only FOH/BOH exist; the combined "BOTH" view was removed. */
+export type ActiveProfile = DataProfile;
 
 export type AppUser = {
   id: string;

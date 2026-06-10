@@ -43,19 +43,28 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
   try {
     const archive = await prisma.taskWeekArchive.findUnique({
       where: { id },
-      select: { storeId: true, data: true },
+      select: { storeId: true, profile: true, data: true },
     });
     if (!archive || archive.storeId !== user.storeId) return jsonError("Week not found", 404);
 
     const data = archive.data as unknown as WeekArchiveData;
     const rows = Array.isArray(data?.rows) ? data.rows : [];
 
+    // Restore into the archive's own profile only, so reverting an FOH week never touches BOH
+    // rows (and vice versa). The two profiles keep entirely separate grids and archives.
     await prisma.$transaction(async (tx) => {
-      await tx.taskRow.deleteMany({ where: { storeId: user.storeId } });
+      await tx.taskRow.deleteMany({
+        where: { storeId: user.storeId, profile: archive.profile },
+      });
       for (let i = 0; i < rows.length; i++) {
         const snapshotRow = rows[i];
         const created = await tx.taskRow.create({
-          data: { storeId: user.storeId, label: snapshotRow.label ?? "", order: i },
+          data: {
+            storeId: user.storeId,
+            profile: archive.profile,
+            label: snapshotRow.label ?? "",
+            order: i,
+          },
           select: { id: true },
         });
         const cells = Object.entries(snapshotRow.cells ?? {})

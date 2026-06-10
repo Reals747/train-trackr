@@ -5,7 +5,6 @@ import type { ActiveProfile } from "./types";
 const OPTIONS: { value: ActiveProfile; label: string }[] = [
   { value: "FOH", label: "FOH" },
   { value: "BOH", label: "BOH" },
-  { value: "BOTH", label: "Both" },
 ];
 
 type Props = {
@@ -27,7 +26,7 @@ export function ProfileToggle({ value, onChange, disabled }: Props) {
           type="button"
           disabled={disabled}
           aria-pressed={value === opt.value}
-          title={opt.value === "BOTH" ? "Both Profiles" : opt.label}
+          title={opt.label}
           className={`min-h-11 rounded-md px-2.5 py-2 text-xs font-semibold sm:px-3 sm:text-sm ${
             value === opt.value
               ? "btn-accent shadow-sm"

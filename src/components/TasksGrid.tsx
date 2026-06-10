@@ -33,7 +33,7 @@ export function ExpandIcon({ className }: { className?: string }) {
   );
 }
 
-type ActiveProfile = "FOH" | "BOH" | "BOTH";
+type ActiveProfile = "FOH" | "BOH";
 
 export function TasksGrid({
   onExpand,

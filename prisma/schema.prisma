@@ -18,8 +18,8 @@ enum Role {
 }
 
 /// Restaurant area a piece of store data belongs to. FOH = Front of House, BOH = Back of House.
-/// Data is tagged with exactly one of these; the per-user "active profile" view filter additionally
-/// supports a "BOTH" value (stored as a string on User) that is intentionally NOT part of this enum.
+/// Data is tagged with exactly one of these, and the per-user "active profile" view filter is
+/// always one of these two values (the old combined "BOTH" view has been removed).
 enum Profile {
   FOH
   BOH
@@ -55,8 +55,8 @@ model User {
   trainerInviteCodeUsed   String?
   /** Per-user UI prefs (accent, dark mode, etc.) — synced across devices for this account. */
   appearanceJson        Json?
-  /** Per-user active profile view filter: "FOH", "BOH", or "BOTH". String (not the Profile enum)
-   *  because "BOTH" is a view-only value with no corresponding data tag. Synced across devices. */
+  /** Per-user active profile view filter: "FOH" or "BOH". Kept as a String column for backward
+   *  compatibility; legacy "BOTH" values are coerced to "FOH" on read. Synced across devices. */
   activeProfile           String               @default("FOH")
   createdAt               DateTime             @default(now())
   store                   Store                @relation(fields: [storeId], references: [id], onDelete: Cascade)

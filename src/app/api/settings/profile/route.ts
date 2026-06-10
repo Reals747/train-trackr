@@ -29,7 +29,7 @@ export async function PUT(request: Request) {
       : raw,
   );
   if (!parsed.success) {
-    return errorResponse("Invalid profile. Use FOH, BOH, or BOTH.");
+    return errorResponse("Invalid profile. Use FOH or BOH.");
   }
 
   await prisma.user.update({

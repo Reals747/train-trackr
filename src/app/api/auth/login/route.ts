@@ -4,6 +4,7 @@ import { z } from "zod";
 import { comparePassword, setAuthCookie, signToken } from "@/lib/auth";
 import { jsonAuthRouteError } from "@/lib/auth-route-error-response";
 import { prisma } from "@/lib/prisma";
+import { normalizeActiveProfile } from "@/lib/profile";
 import { STORE_CODE_REGEX } from "@/lib/store-code";
 
 const ownerSchema = z.object({
@@ -136,7 +137,7 @@ async function issueSession(
       storeId: user.storeId,
       storeName: user.store.name,
       storeCode: user.store.storeCode,
-      activeProfile: user.activeProfile ?? "FOH",
+      activeProfile: normalizeActiveProfile(user.activeProfile),
     },
   });
 }

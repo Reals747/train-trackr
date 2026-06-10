@@ -1124,7 +1124,6 @@ export function SettingsPanel({
         <EditTraineeModal
           key={traineePendingEdit.id}
           trainee={traineePendingEdit}
-          activeProfile={activeProfile}
           busy={savingTraineeId === traineePendingEdit.id}
           error={traineeActionError}
           onClose={() => {

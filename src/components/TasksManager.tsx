@@ -384,7 +384,7 @@ function PastWeekModal({
 
 /* ------------------------------------------------------------------ Main manager */
 
-type ActiveProfile = "FOH" | "BOH" | "BOTH";
+type ActiveProfile = "FOH" | "BOH";
 
 export function TasksManager({
   manageMode,
@@ -508,10 +508,7 @@ export function TasksManager({
   /* ---- row helpers ---- */
 
   const addRow = async () => {
-    const body: { profile?: "FOH" | "BOH" } = {};
-    if (activeProfile === "FOH" || activeProfile === "BOH") {
-      body.profile = activeProfile;
-    }
+    const body: { profile: "FOH" | "BOH" } = { profile: activeProfile };
     try {
       const data = await clientApi<{ row: { id: string; label: string; order: number } }>(
         "/api/tasks/rows",
@@ -565,10 +562,7 @@ export function TasksManager({
   /* ---- preset helpers ---- */
 
   const addPreset = async (text: string) => {
-    const body: { text: string; profile?: "FOH" | "BOH" } = { text };
-    if (activeProfile === "FOH" || activeProfile === "BOH") {
-      body.profile = activeProfile;
-    }
+    const body: { text: string; profile: "FOH" | "BOH" } = { text, profile: activeProfile };
     try {
       const data = await clientApi<{ preset: TaskPresetDto }>("/api/tasks/presets", {
         method: "POST",

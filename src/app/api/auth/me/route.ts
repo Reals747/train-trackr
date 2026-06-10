@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAuth } from "@/lib/api";
 import { prisma } from "@/lib/prisma";
+import { normalizeActiveProfile } from "@/lib/profile";
 
 export async function GET() {
   const { user, error } = await requireAuth();
@@ -23,7 +24,7 @@ export async function GET() {
       storeId: dbUser.storeId,
       storeName: dbUser.store.name,
       storeCode: dbUser.store.storeCode,
-      activeProfile: dbUser.activeProfile,
+      activeProfile: normalizeActiveProfile(dbUser.activeProfile),
     },
   });
 }

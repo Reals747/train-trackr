@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { getAuthUserFromCookie } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { can, type Permission } from "@/lib/permissions";
+import { normalizeActiveProfile } from "@/lib/profile";
 
 export function errorResponse(message: string, status = 400) {
   return NextResponse.json({ error: message }, { status });
@@ -54,7 +55,7 @@ export async function requireAuth(options?: RequireAuthOptions | Role[]) {
     role: dbUser.role,
     storeId: dbUser.storeId,
     name: dbUser.name,
-    activeProfile: dbUser.activeProfile,
+    activeProfile: normalizeActiveProfile(dbUser.activeProfile),
   };
 
   return { user };
