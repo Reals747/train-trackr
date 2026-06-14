@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { ProfileToggle } from "@/app/_home/ProfileToggle";
-import type { ActiveProfile } from "@/app/_home/types";
+import type { ActiveProfile, StoreProfileRow } from "@/app/_home/types";
 import { clientApi } from "@/lib/client-api";
 import { MANAGER_ROLES, type RoleName } from "@/lib/permissions";
 import { TasksManager } from "@/components/TasksManager";
@@ -11,6 +11,7 @@ import { TasksManager } from "@/components/TasksManager";
 export default function TasksFullPage() {
   const [role, setRole] = useState<RoleName | null>(null);
   const [activeProfile, setActiveProfile] = useState<ActiveProfile>("FOH");
+  const [storeProfiles, setStoreProfiles] = useState<StoreProfileRow[]>([]);
   const [profileSaving, setProfileSaving] = useState(false);
   const [manageMode, setManageMode] = useState(false);
 
@@ -25,6 +26,20 @@ export default function TasksFullPage() {
       })
       .catch(() => {
         if (!cancelled) setRole(null);
+      });
+    clientApi<{ profiles: StoreProfileRow[] }>("/api/store-profiles")
+      .then((data) => {
+        if (!cancelled) {
+          setStoreProfiles(data.profiles);
+          setActiveProfile((prev) =>
+            data.profiles.some((profile) => profile.key === prev)
+              ? prev
+              : (data.profiles[0]?.key ?? "FOH"),
+          );
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setStoreProfiles([]);
       });
     return () => {
       cancelled = true;
@@ -58,6 +73,7 @@ export default function TasksFullPage() {
           <ProfileToggle
             value={activeProfile}
             onChange={handleActiveProfileChange}
+            profiles={storeProfiles}
             disabled={profileSaving}
           />
           {canManage && (

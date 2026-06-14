@@ -1,6 +1,6 @@
-import { Profile } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { profileWhere, type ActiveProfile } from "@/lib/profile";
+import { profileWriteData } from "@/lib/store-profiles-server";
 import {
   TASK_DAYS,
   type GridRow,
@@ -46,7 +46,7 @@ export async function rowBelongsToStore(rowId: string, storeId: string): Promise
 export async function addPresetsFromContent(
   storeId: string,
   content: string,
-  profile: Profile,
+  profileKey: string,
 ): Promise<void> {
   const texts = Array.from(new Set(parseTaskLines(content).map((task) => task.text))).filter(
     (text) => text.length > 0,
@@ -55,7 +55,7 @@ export async function addPresetsFromContent(
 
   try {
     const existing = await prisma.taskPreset.findMany({
-      where: { storeId, profile, text: { in: texts } },
+      where: { storeId, profileKey, text: { in: texts } },
       select: { text: true },
     });
     const have = new Set(existing.map((preset) => preset.text));
@@ -63,13 +63,18 @@ export async function addPresetsFromContent(
     if (toAdd.length === 0) return;
 
     const max = await prisma.taskPreset.aggregate({
-      where: { storeId, profile },
+      where: { storeId, profileKey },
       _max: { order: true },
     });
     let order = (max._max.order ?? -1) + 1;
 
     await prisma.taskPreset.createMany({
-      data: toAdd.map((text) => ({ storeId, profile, text, order: order++ })),
+      data: toAdd.map((text) => ({
+        storeId,
+        text,
+        order: order++,
+        ...profileWriteData(profileKey),
+      })),
       skipDuplicates: true,
     });
   } catch {

@@ -1,44 +1,47 @@
-import { Profile } from "@prisma/client";
 import { z } from "zod";
 
-/** Stored on data rows — exactly one restaurant area per record. */
-export const DATA_PROFILES = ["FOH", "BOH"] as const;
-export type DataProfile = (typeof DATA_PROFILES)[number];
+/** Stable key tagging data rows (FOH, BOH, or custom store profile keys). */
+export type DataProfile = string;
+/** Per-user active profile filter — must match a store profile key. */
+export type ActiveProfile = string;
 
-/**
- * Per-user view filter. There are only two profiles now (FOH / BOH); the old "BOTH"
- * combined view has been removed, so the active profile is always a concrete data profile.
- */
-export const ACTIVE_PROFILES = ["FOH", "BOH"] as const;
-export type ActiveProfile = (typeof ACTIVE_PROFILES)[number];
+/** Legacy built-in keys; new stores may define additional keys in StoreProfile. */
+export const LEGACY_DATA_PROFILES = ["FOH", "BOH"] as const;
 
-export const profileSchema = z.enum(DATA_PROFILES);
-export const activeProfileSchema = z.enum(ACTIVE_PROFILES);
-
-export function isActiveProfile(value: string): value is ActiveProfile {
-  return (ACTIVE_PROFILES as readonly string[]).includes(value);
-}
+export const profileSchema = z.string().trim().min(1).max(64);
+export const activeProfileSchema = profileSchema;
 
 export function isDataProfile(value: string): value is DataProfile {
-  return (DATA_PROFILES as readonly string[]).includes(value);
+  return profileSchema.safeParse(value).success;
+}
+
+export function isActiveProfile(value: string): value is ActiveProfile {
+  return profileSchema.safeParse(value).success;
 }
 
 /**
- * Coerce any stored/legacy value (including the removed "BOTH") to a valid active profile.
- * Falls back to FOH so accounts saved before BOTH was removed keep working.
+ * Coerce stored/legacy values to a valid active profile key for this store.
+ * Falls back to the first configured profile, then FOH.
  */
-export function normalizeActiveProfile(value: string | null | undefined): ActiveProfile {
-  return value && isActiveProfile(value) ? value : "FOH";
+export function normalizeActiveProfile(
+  value: string | null | undefined,
+  profileKeys?: readonly string[],
+): ActiveProfile {
+  if (value && profileKeys?.includes(value)) return value;
+  if (value && (!profileKeys || profileKeys.length === 0) && isActiveProfile(value)) {
+    return value;
+  }
+  return profileKeys?.[0] ?? "FOH";
 }
 
-/** Prisma where-clause fragment scoping a query to a single profile. */
-export function profileWhere(active: ActiveProfile): { profile: Profile } {
-  return { profile: active as Profile };
+/** Prisma where-clause fragment scoping a query to a single profile key. */
+export function profileWhere(active: ActiveProfile): { profileKey: string } {
+  return { profileKey: active };
 }
 
 /**
- * Resolve profile for a write: explicit body value when valid, else caller's active profile.
- * Returns null only when an explicit value was provided but isn't a valid profile.
+ * Resolve profile key for a write: explicit body value when valid, else caller's active profile.
+ * Returns null only when an explicit value was provided but isn't valid.
  */
 export function resolveWriteProfile(
   activeProfile: string,
@@ -56,9 +59,17 @@ export function resolveWriteProfile(
 export function activeProfileFromRequest(
   request: Request,
   userActiveProfile: string,
+  profileKeys?: readonly string[],
 ): ActiveProfile {
   const url = new URL(request.url);
   const param = url.searchParams.get("profile");
-  if (param && isActiveProfile(param)) return param;
-  return normalizeActiveProfile(userActiveProfile);
+  if (param && isActiveProfile(param)) {
+    if (!profileKeys || profileKeys.includes(param)) return param;
+  }
+  return normalizeActiveProfile(userActiveProfile, profileKeys);
+}
+
+/** Map a DB row to the API `profile` field (always the profileKey). */
+export function apiProfileField(row: { profileKey?: string; profile?: string }): string {
+  return row.profileKey ?? row.profile ?? "FOH";
 }

@@ -29,6 +29,7 @@ export type Permission =
   | "settings.appearance"
   | "settings.store.view"
   | "settings.store.rename"
+  | "settings.store.profiles"
   | "settings.store.delete"
   | "settings.trainingSetup"
   | "settings.trainers"

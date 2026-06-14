@@ -106,7 +106,9 @@ export async function POST(request: Request) {
   await logActivity({
     storeId: user.storeId,
     userId: user.userId,
-    message: `${user.name} ${parsed.data.completed ? "completed" : "cleared"} item for ${trainee.name}`,
+    message: parsed.data.completed
+      ? `Completed checklist item for "${trainee.name}"`
+      : `Cleared checklist item for "${trainee.name}"`,
   });
 
   return NextResponse.json({ progress });

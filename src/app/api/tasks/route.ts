@@ -1,11 +1,13 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { errorResponse, requireAuth, STORE_MANAGER_ROLES } from "@/lib/api";
+import { logActivity } from "@/lib/activity";
 import { prisma, prismaHasTaskRow } from "@/lib/prisma";
 import { TASK_COLUMN_COUNT, setTaskDone } from "@/lib/tasks";
 import { handleTasksError, staleClientError } from "@/lib/tasks-api";
-import { activeProfileFromRequest } from "@/lib/profile";
+import { activeProfileFromRequest, apiProfileField } from "@/lib/profile";
 import { addPresetsFromContent, loadGrid, rowBelongsToStore } from "@/lib/tasks-server";
+import { listStoreProfiles } from "@/lib/store-profiles-server";
 
 const putSchema = z.object({
   rowId: z.string().min(1),
@@ -25,7 +27,8 @@ export async function GET(request: Request) {
   if (error) return error;
   if (!prismaHasTaskRow()) return staleClientError();
 
-  const active = activeProfileFromRequest(request, user.activeProfile);
+  const profiles = await listStoreProfiles(user.storeId);
+  const active = activeProfileFromRequest(request, user.activeProfile, profiles.map((p) => p.key));
 
   try {
     const rows = await loadGrid(user.storeId, active);
@@ -48,7 +51,7 @@ export async function PUT(request: Request) {
   try {
     const row = await prisma.taskRow.findUnique({
       where: { id: rowId },
-      select: { storeId: true, profile: true },
+      select: { storeId: true, profileKey: true, profile: true },
     });
     if (!row || row.storeId !== user.storeId) {
       return errorResponse("Row not found", 404);
@@ -60,7 +63,12 @@ export async function PUT(request: Request) {
       update: { content },
       select: { rowId: true, colIndex: true, content: true },
     });
-    await addPresetsFromContent(user.storeId, content, row.profile);
+    await addPresetsFromContent(user.storeId, content, apiProfileField(row));
+    await logActivity({
+      storeId: user.storeId,
+      userId: user.userId,
+      message: "Updated tasks grid",
+    });
     return NextResponse.json({ cell });
   } catch (e) {
     return handleTasksError("[tasks PUT]", e, "Could not save task");

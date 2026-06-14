@@ -2,6 +2,7 @@ import { Role } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { errorResponse, requireAuth } from "@/lib/api";
+import { logActivity } from "@/lib/activity";
 import { prisma } from "@/lib/prisma";
 import { STORE_CODE_REGEX } from "@/lib/store-code";
 
@@ -75,6 +76,15 @@ export async function POST(request: Request) {
       });
 
       return { store: updated };
+    });
+
+    await logActivity({
+      storeId: user.storeId,
+      userId: user.userId,
+      message:
+        kickScope === "trainers_only"
+          ? "Reset store code and removed trainers"
+          : "Reset store code and removed trainers and admins",
     });
 
     return NextResponse.json(result);

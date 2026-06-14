@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { errorResponse, requireAuth } from "@/lib/api";
+import { logActivity } from "@/lib/activity";
 import { prisma } from "@/lib/prisma";
 
 export async function DELETE(
@@ -16,5 +17,10 @@ export async function DELETE(
   if (!announcement) return errorResponse("Announcement not found", 404);
 
   await prisma.announcement.delete({ where: { id: announcementId } });
+  await logActivity({
+    storeId: user.storeId,
+    userId: user.userId,
+    message: `Deleted announcement "${announcement.title}"`,
+  });
   return NextResponse.json({ success: true });
 }

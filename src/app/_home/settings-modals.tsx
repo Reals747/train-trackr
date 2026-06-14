@@ -162,6 +162,97 @@ export function DeleteStoreConfirmModal({
   );
 }
 
+export function DeleteStoreProfileConfirmModal({
+  profileName,
+  confirmText,
+  onConfirmTextChange,
+  busy,
+  error,
+  onClose,
+  onConfirmDeletion,
+}: {
+  profileName: string;
+  confirmText: string;
+  onConfirmTextChange: (v: string) => void;
+  busy: boolean;
+  error: string;
+  onClose: () => void;
+  onConfirmDeletion: () => void | Promise<void>;
+}) {
+  const nameMatches =
+    profileName.trim().length > 0 && confirmText.trim() === profileName.trim();
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  return (
+    <div
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="delete-profile-dialog-title"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div
+        className="w-full max-w-md rounded-xl border bg-card p-5 shadow-xl"
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        <div className="mb-2 flex items-start gap-2">
+          <WarningTriangleIcon className="mt-0.5 h-7 w-7 shrink-0 text-amber-500" />
+          <h3 id="delete-profile-dialog-title" className="text-lg font-semibold text-rose-900 dark:text-rose-200">
+            Delete this profile?
+          </h3>
+        </div>
+        <p className="mb-4 text-sm text-foreground">
+          This removes the profile from your store settings. It can only be deleted when no
+          positions, trainees, tasks, or users are still using it.
+        </p>
+        <p className="mb-3 text-sm">To confirm, type the profile name exactly as shown:</p>
+        <p className="mb-4 rounded-lg border bg-slate-100 px-3 py-2 font-medium dark:bg-slate-800">
+          {profileName || "(unknown)"}
+        </p>
+        <label className="mb-1 block text-xs font-medium uppercase tracking-wide opacity-70">
+          Profile name
+        </label>
+        <input
+          autoFocus
+          value={confirmText}
+          onChange={(e) => onConfirmTextChange(e.target.value)}
+          placeholder="Type the full profile name"
+          className="mb-3 w-full rounded-lg border bg-background p-3"
+          autoComplete="off"
+        />
+        {error && <p className="mb-3 text-sm text-rose-600">{error}</p>}
+        <div className="flex flex-wrap justify-end gap-2">
+          <button
+            type="button"
+            className="rounded-lg border px-4 py-2 text-sm font-medium"
+            disabled={busy}
+            onClick={onClose}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-medium text-white hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-40"
+            disabled={!nameMatches || busy}
+            onClick={() => void onConfirmDeletion()}
+          >
+            {busy ? "Deleting…" : "Confirm deletion"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function ResetStoreCodeConfirmModal({
   currentStoreCode,
   confirmText,

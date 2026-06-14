@@ -3,8 +3,10 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { hashPassword, setAuthCookie, signToken } from "@/lib/auth";
 import { jsonAuthRouteError } from "@/lib/auth-route-error-response";
+import { logActivity } from "@/lib/activity";
 import { prisma } from "@/lib/prisma";
 import { generateUniqueStoreCode } from "@/lib/store-code";
+import { ensureDefaultStoreProfiles } from "@/lib/store-profiles-server";
 
 const usernameSchema = z
   .string()
@@ -52,6 +54,7 @@ export async function POST(request: Request) {
           storeId: createdStore.id,
         },
       });
+      await ensureDefaultStoreProfiles(createdStore.id, tx);
       return { store: createdStore, user: createdUser };
     });
 
@@ -63,6 +66,12 @@ export async function POST(request: Request) {
       name: user.name,
     });
     await setAuthCookie(token);
+
+    await logActivity({
+      storeId: store.id,
+      userId: user.id,
+      message: `Created store "${store.name}"`,
+    });
 
     return NextResponse.json({
       user: {

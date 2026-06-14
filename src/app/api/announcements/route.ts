@@ -63,7 +63,7 @@ export async function POST(request: Request) {
   await logActivity({
     storeId: user.storeId,
     userId: user.userId,
-    message: `Posted announcement: ${announcement.title}`,
+    message: `Posted announcement "${announcement.title}"`,
   });
 
   return NextResponse.json({

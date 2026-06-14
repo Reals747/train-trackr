@@ -1,6 +1,7 @@
 import { requireAuth } from "@/lib/api";
-import { activeProfileFromRequest, profileWhere } from "@/lib/profile";
+import { activeProfileFromRequest, apiProfileField, profileWhere } from "@/lib/profile";
 import { prisma } from "@/lib/prisma";
+import { listStoreProfiles } from "@/lib/store-profiles-server";
 import { NextResponse } from "next/server";
 
 type PositionStatus = "complete" | "partial" | "none" | "unavailable";
@@ -19,7 +20,8 @@ export async function GET(request: Request) {
   const { user, error } = await requireAuth();
   if (error) return error;
 
-  const active = activeProfileFromRequest(request, user.activeProfile);
+  const profiles = await listStoreProfiles(user.storeId);
+  const active = activeProfileFromRequest(request, user.activeProfile, profiles.map((p) => p.key));
   const profileFilter = profileWhere(active);
 
   const [trainees, storePositions] = await Promise.all([
@@ -102,7 +104,7 @@ export async function GET(request: Request) {
     return {
       id: trainee.id,
       name: trainee.name,
-      profile: trainee.profile,
+      profile: apiProfileField(trainee),
       percentage,
       positionsFullyComplete,
       storePositionCount,

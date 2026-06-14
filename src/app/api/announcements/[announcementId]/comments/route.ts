@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { errorResponse, requireAuth } from "@/lib/api";
+import { logActivity } from "@/lib/activity";
 import { prisma } from "@/lib/prisma";
 
 const schema = z.object({
@@ -32,6 +33,12 @@ export async function POST(
     include: {
       user: { select: { id: true, name: true } },
     },
+  });
+
+  await logActivity({
+    storeId: user.storeId,
+    userId: user.userId,
+    message: `Commented on announcement "${announcement.title}"`,
   });
 
   return NextResponse.json({

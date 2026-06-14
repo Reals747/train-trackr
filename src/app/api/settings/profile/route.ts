@@ -1,26 +1,32 @@
 import { NextResponse } from "next/server";
 import { errorResponse, requireAuth } from "@/lib/api";
-import { activeProfileSchema } from "@/lib/profile";
+import { activeProfileSchema, normalizeActiveProfile } from "@/lib/profile";
 import { prisma } from "@/lib/prisma";
+import { listStoreProfiles } from "@/lib/store-profiles-server";
 
 export async function GET() {
   const { user, error } = await requireAuth();
   if (error) return error;
+
+  const profiles = await listStoreProfiles(user.storeId);
+  const profileKeys = profiles.map((profile) => profile.key);
 
   const row = await prisma.user.findUnique({
     where: { id: user.userId },
     select: { activeProfile: true },
   });
 
-  const parsed = activeProfileSchema.safeParse(row?.activeProfile);
   return NextResponse.json({
-    activeProfile: parsed.success ? parsed.data : "FOH",
+    activeProfile: normalizeActiveProfile(row?.activeProfile, profileKeys),
   });
 }
 
 export async function PUT(request: Request) {
   const { user, error } = await requireAuth();
   if (error) return error;
+
+  const profiles = await listStoreProfiles(user.storeId);
+  const profileKeys = profiles.map((profile) => profile.key);
 
   const raw = await request.json().catch(() => null);
   const parsed = activeProfileSchema.safeParse(
@@ -29,7 +35,10 @@ export async function PUT(request: Request) {
       : raw,
   );
   if (!parsed.success) {
-    return errorResponse("Invalid profile. Use FOH or BOH.");
+    return errorResponse("Invalid profile selection.");
+  }
+  if (!profileKeys.includes(parsed.data)) {
+    return errorResponse("Invalid profile selection.");
   }
 
   await prisma.user.update({

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { errorResponse, requireAuth } from "@/lib/api";
+import { logActivity } from "@/lib/activity";
 import { prisma } from "@/lib/prisma";
 
 const schema = z.object({
@@ -40,6 +41,11 @@ export async function PUT(
       kind: nextKind,
     },
   });
+  await logActivity({
+    storeId: user.storeId,
+    userId: user.userId,
+    message: `Updated checklist item in ${item.position.name}`,
+  });
   return NextResponse.json({ item: updated });
 }
 
@@ -60,5 +66,10 @@ export async function DELETE(
   }
 
   await prisma.checklistItem.delete({ where: { id: itemId } });
+  await logActivity({
+    storeId: user.storeId,
+    userId: user.userId,
+    message: `Deleted checklist item from ${item.position.name}`,
+  });
   return NextResponse.json({ success: true });
 }

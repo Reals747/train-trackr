@@ -4,11 +4,13 @@ import { errorResponse, requireAuth } from "@/lib/api";
 import { logActivity } from "@/lib/activity";
 import {
   activeProfileFromRequest,
+  apiProfileField,
   profileSchema,
   profileWhere,
   resolveWriteProfile,
 } from "@/lib/profile";
 import { prisma } from "@/lib/prisma";
+import { assertStoreProfileKey, listStoreProfiles, profileWriteData } from "@/lib/store-profiles-server";
 
 const schema = z.object({
   name: z.string().min(2),
@@ -26,7 +28,8 @@ export async function GET(request: Request) {
   const search = url.searchParams.get("search") || "";
   const positionId = url.searchParams.get("positionId") || "";
 
-  const active = activeProfileFromRequest(request, user.activeProfile);
+  const profiles = await listStoreProfiles(user.storeId);
+  const active = activeProfileFromRequest(request, user.activeProfile, profiles.map((p) => p.key));
 
   const trainees = await prisma.trainee.findMany({
     where: {
@@ -44,7 +47,12 @@ export async function GET(request: Request) {
     orderBy: { createdAt: "desc" },
   });
 
-  return NextResponse.json({ trainees });
+  return NextResponse.json({
+    trainees: trainees.map((trainee) => ({
+      ...trainee,
+      profile: apiProfileField(trainee),
+    })),
+  });
 }
 
 export async function POST(request: Request) {
@@ -56,16 +64,20 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid trainee payload" }, { status: 400 });
   }
 
-  const profile = resolveWriteProfile(user.activeProfile, parsed.data.profile);
-  if (!profile) {
-    return errorResponse("Select FOH or BOH profile for this trainee", 400);
+  const profileKey = resolveWriteProfile(user.activeProfile, parsed.data.profile);
+  if (!profileKey) {
+    return errorResponse("Select a valid profile for this trainee", 400);
+  }
+  const validatedKey = await assertStoreProfileKey(user.storeId, profileKey);
+  if (!validatedKey) {
+    return errorResponse("Select a valid profile for this trainee", 400);
   }
 
   if (parsed.data.positionIds.length > 0) {
     const matching = await prisma.position.count({
       where: {
         storeId: user.storeId,
-        profile,
+        profileKey: validatedKey,
         id: { in: parsed.data.positionIds },
       },
     });
@@ -82,7 +94,7 @@ export async function POST(request: Request) {
       name: parsed.data.name.trim(),
       startDate,
       storeId: user.storeId,
-      profile,
+      ...profileWriteData(validatedKey),
       positions: {
         createMany: {
           data: parsed.data.positionIds.map((id) => ({ positionId: id })),
@@ -98,8 +110,10 @@ export async function POST(request: Request) {
   await logActivity({
     storeId: user.storeId,
     userId: user.userId,
-    message: `Created trainee ${trainee.name}`,
+    message: `Created trainee "${trainee.name}"`,
   });
 
-  return NextResponse.json({ trainee });
+  return NextResponse.json({
+    trainee: { ...trainee, profile: apiProfileField(trainee) },
+  });
 }

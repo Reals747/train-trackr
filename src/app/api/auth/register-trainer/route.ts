@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { setAuthCookie, signToken } from "@/lib/auth";
 import { jsonAuthRouteError } from "@/lib/auth-route-error-response";
+import { logActivity } from "@/lib/activity";
 import { prisma } from "@/lib/prisma";
 import { STORE_CODE_REGEX } from "@/lib/store-code";
 
@@ -68,6 +69,12 @@ export async function POST(request: Request) {
       name: userRow.name,
     });
     await setAuthCookie(token);
+
+    await logActivity({
+      storeId: store.id,
+      userId: userRow.id,
+      message: "Joined the store as a trainer",
+    });
 
     return NextResponse.json({
       user: {

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireAuth } from "@/lib/api";
+import { logActivity } from "@/lib/activity";
 import { prisma } from "@/lib/prisma";
 
 const schema = z.object({
@@ -38,6 +39,12 @@ export async function PUT(request: Request) {
       trainerCanViewAll: parsed.data.trainerCanViewAll,
       darkModeEnabled: parsed.data.darkModeEnabled,
     },
+  });
+
+  await logActivity({
+    storeId: user.storeId,
+    userId: user.userId,
+    message: "Updated store settings",
   });
 
   return NextResponse.json({ settings });

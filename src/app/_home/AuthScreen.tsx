@@ -145,7 +145,7 @@ export function AuthScreen({
   const submitLabel = (() => {
     if (mode === "register-admin") return "Create store";
     if (mode === "register-trainer") return "Create trainer account";
-    if (mode === "set-password") return "Create password & sign in";
+    if (mode === "set-password") return "Set password & sign in";
     return "Sign in";
   })();
 
@@ -227,11 +227,12 @@ export function AuthScreen({
 
         {mode === "set-password" && (
           <div className="mb-4 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-500/50 dark:bg-amber-950/30 dark:text-amber-200">
-            <p className="font-semibold">Set a password for your account</p>
+            <p className="font-semibold">Set or reset your password</p>
             <p className="mt-1 opacity-90">
-              Use this if you were promoted to admin from a trainer account and don&apos;t have
-              a password yet. Enter your username, the 8-digit store code, and a new password.
-              You&apos;ll be signed in right away and can use that password from now on.
+              Use this if you were promoted to admin and never set a password, or if
+              you forgot your password. Enter your username, the 8-digit store code,
+              and a new password. You&apos;ll be signed in right away and can use
+              that password from now on.
             </p>
           </div>
         )}
@@ -318,7 +319,7 @@ export function AuthScreen({
               mode === "login"
                 ? "Password"
                 : mode === "set-password"
-                  ? "Create new password (min 8)"
+                  ? "New password (min 8)"
                   : "Password (min 8)"
             }
             className="mb-2 w-full rounded-lg border p-3 text-base"
@@ -382,7 +383,7 @@ export function AuthScreen({
                 setMode("set-password");
               }}
             >
-              Help, I don&apos;t have a password!
+              Forgot password or need to set one?
             </button>
           )}
         </div>

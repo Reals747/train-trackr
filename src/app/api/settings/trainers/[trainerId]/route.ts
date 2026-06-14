@@ -2,6 +2,7 @@ import { Role } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { errorResponse, requireAuth } from "@/lib/api";
+import { logActivity } from "@/lib/activity";
 import { can } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 
@@ -20,7 +21,7 @@ const patchSchema = z
  * - Assigning the OWNER role requires `members.assignOwner` (website developer only).
  * - Name changes are allowed when the caller is the same user OR when the
  *   caller is an admin/owner whose role permits managing members. Admins
- *   cannot rename the store owner — only the owner themselves can.
+ *   cannot rename the store owner — only the owner or website developer can.
  */
 export async function PATCH(
   request: Request,
@@ -61,7 +62,7 @@ export async function PATCH(
     if (isSelf) {
       return errorResponse("You cannot change your own role here.", 400);
     }
-    if (target.role === Role.OWNER) {
+    if (target.role === Role.OWNER && user.role !== Role.WEBSITE_DEVELOPER) {
       return errorResponse("The store owner cannot be reassigned.", 400);
     }
     /** The website developer account is intentionally undemotable. */
@@ -114,6 +115,22 @@ export async function PATCH(
     },
   });
 
+  if (updateData.role !== undefined) {
+    await logActivity({
+      storeId: user.storeId,
+      userId: user.userId,
+      message: `Changed role to ${updateData.role} for "${target.name}"`,
+    });
+  } else if (updateData.name !== undefined) {
+    await logActivity({
+      storeId: user.storeId,
+      userId: user.userId,
+      message: isSelf
+        ? `Renamed to "${updateData.name}"`
+        : `Renamed "${target.name}" to "${updateData.name}"`,
+    });
+  }
+
   return NextResponse.json({
     member: {
       id: updated.id,
@@ -152,7 +169,7 @@ export async function DELETE(
     return errorResponse("User not found", 404);
   }
 
-  if (target.role === Role.OWNER) {
+  if (target.role === Role.OWNER && user.role !== Role.WEBSITE_DEVELOPER) {
     return errorResponse("The store owner cannot be removed.", 400);
   }
   if (target.role === Role.WEBSITE_DEVELOPER) {
@@ -172,5 +189,10 @@ export async function DELETE(
   }
 
   await prisma.user.delete({ where: { id: trainerId } });
+  await logActivity({
+    storeId: user.storeId,
+    userId: user.userId,
+    message: `Removed team member "${target.name}"`,
+  });
   return NextResponse.json({ success: true });
 }

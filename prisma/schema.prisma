@@ -40,6 +40,22 @@ model Store {
   taskRows         TaskRow[]
   taskPresets      TaskPreset[]
   taskWeekArchives TaskWeekArchive[]
+  profiles         StoreProfile[]
+}
+
+/** Configurable store area profile (FOH, BOH, or custom). `key` tags data rows; `name` is display-only. */
+model StoreProfile {
+  id        String   @id @default(cuid())
+  storeId   String
+  key       String
+  name      String
+  color     String   @default("sky")
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  store     Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@unique([storeId, key])
+  @@index([storeId, sortOrder])
 }
 
 model User {
@@ -107,6 +123,7 @@ model Position {
   id              String                      @id @default(cuid())
   storeId         String
   profile         Profile                     @default(FOH)
+  profileKey      String                      @default("FOH")
   name            String
   hidden          Boolean                     @default(false)
   /** Manual sort order within a store; 0-based ascending. Backfilled from alphabetical name on first migration. */
@@ -117,9 +134,10 @@ model Position {
   trainees        TraineePosition[]
   workflowComments WorkflowGeneralComments[]
 
-  @@unique([storeId, profile, name])
+  @@unique([storeId, profileKey, name])
   @@index([storeId, order])
   @@index([storeId, profile])
+  @@index([storeId, profileKey])
 }
 
 model ChecklistItem {
@@ -139,6 +157,7 @@ model Trainee {
   id               String                    @id @default(cuid())
   storeId          String
   profile          Profile                   @default(FOH)
+  profileKey       String                    @default("FOH")
   name             String
   startDate        DateTime
   createdAt        DateTime                  @default(now())
@@ -149,6 +168,7 @@ model Trainee {
 
   @@index([storeId, name])
   @@index([storeId, profile])
+  @@index([storeId, profileKey])
 }
 
 /** Free-form workflow notes for a trainee on a given checklist position (not tied to assignment rows). */
@@ -199,6 +219,7 @@ model TaskRow {
   id        String     @id @default(cuid())
   storeId   String
   profile   Profile    @default(FOH)
+  profileKey String    @default("FOH")
   label     String     @default("")
   order     Int        @default(0)
   createdAt DateTime   @default(now())
@@ -207,6 +228,7 @@ model TaskRow {
 
   @@index([storeId, order])
   @@index([storeId, profile])
+  @@index([storeId, profileKey])
 }
 
 /**
@@ -235,14 +257,16 @@ model TaskPreset {
   id        String   @id @default(cuid())
   storeId   String
   profile   Profile  @default(FOH)
+  profileKey String  @default("FOH")
   text      String
   order     Int      @default(0)
   createdAt DateTime @default(now())
   store     Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
 
-  @@unique([storeId, profile, text])
+  @@unique([storeId, profileKey, text])
   @@index([storeId, order])
   @@index([storeId, profile])
+  @@index([storeId, profileKey])
 }
 
 /**
@@ -254,6 +278,7 @@ model TaskWeekArchive {
   id         String   @id @default(cuid())
   storeId    String
   profile    Profile  @default(FOH)
+  profileKey String   @default("FOH")
   label      String
   data       Json
   archivedAt DateTime @default(now())
@@ -261,6 +286,7 @@ model TaskWeekArchive {
 
   @@index([storeId, archivedAt])
   @@index([storeId, profile])
+  @@index([storeId, profileKey])
 }
 
 model ActivityLog {

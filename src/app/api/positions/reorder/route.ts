@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { errorResponse, requireAuth } from "@/lib/api";
+import { logActivity } from "@/lib/activity";
 import { prisma } from "@/lib/prisma";
 
 const schema = z.object({
@@ -40,6 +41,12 @@ export async function POST(request: Request) {
       }),
     ),
   );
+
+  await logActivity({
+    storeId: user.storeId,
+    userId: user.userId,
+    message: "Reordered positions",
+  });
 
   return NextResponse.json({ success: true });
 }

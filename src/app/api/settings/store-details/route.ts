@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { errorResponse, requireAuth } from "@/lib/api";
+import { logActivity } from "@/lib/activity";
 import { prisma } from "@/lib/prisma";
 
 const schema = z.object({
@@ -43,6 +44,12 @@ export async function PUT(request: Request) {
   const store = await prisma.store.update({
     where: { id: user.storeId },
     data: { name: parsed.data.name.trim() },
+  });
+
+  await logActivity({
+    storeId: user.storeId,
+    userId: user.userId,
+    message: `Renamed store to "${store.name}"`,
   });
 
   return NextResponse.json({ store });

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireAuth, STORE_MANAGER_ROLES } from "@/lib/api";
+import { logActivity } from "@/lib/activity";
 import { prisma, prismaHasTaskRow } from "@/lib/prisma";
 import { handleTasksError, jsonError, staleClientError } from "@/lib/tasks-api";
 import type { WeekArchiveData } from "@/lib/tasks";
@@ -43,7 +44,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
   try {
     const archive = await prisma.taskWeekArchive.findUnique({
       where: { id },
-      select: { storeId: true, profile: true, data: true },
+      select: { storeId: true, profile: true, data: true, label: true },
     });
     if (!archive || archive.storeId !== user.storeId) return jsonError("Week not found", 404);
 
@@ -78,6 +79,12 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
       }
     });
 
+    await logActivity({
+      storeId: user.storeId,
+      userId: user.userId,
+      message: `Reverted tasks grid to "${archive.label}"`,
+    });
+
     return NextResponse.json({ ok: true });
   } catch (e) {
     return handleTasksError("[tasks/weeks/:id POST]", e, "Could not revert to week");
@@ -95,11 +102,16 @@ export async function DELETE(_request: Request, { params }: { params: Promise<{ 
   try {
     const archive = await prisma.taskWeekArchive.findUnique({
       where: { id },
-      select: { storeId: true },
+      select: { storeId: true, label: true },
     });
     if (!archive || archive.storeId !== user.storeId) return jsonError("Week not found", 404);
 
     await prisma.taskWeekArchive.delete({ where: { id } });
+    await logActivity({
+      storeId: user.storeId,
+      userId: user.userId,
+      message: `Deleted archived week "${archive.label}"`,
+    });
     return NextResponse.json({ ok: true });
   } catch (e) {
     return handleTasksError("[tasks/weeks/:id DELETE]", e, "Could not delete week");

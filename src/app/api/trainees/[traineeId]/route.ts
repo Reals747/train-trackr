@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { errorResponse, requireAuth } from "@/lib/api";
-import { profileSchema } from "@/lib/profile";
+import { logActivity } from "@/lib/activity";
+import { apiProfileField, profileSchema } from "@/lib/profile";
 import { prisma } from "@/lib/prisma";
+import { assertStoreProfileKey, profileWriteData } from "@/lib/store-profiles-server";
 
 const schema = z
   .object({
@@ -31,13 +33,19 @@ export async function PUT(
   const parsed = schema.safeParse(await request.json());
   if (!parsed.success) return errorResponse("Invalid trainee payload");
 
-  const nextProfile = parsed.data.profile ?? trainee.profile;
+  const nextProfileKey = parsed.data.profile ?? apiProfileField(trainee);
+  const effectiveProfileKey = parsed.data.profile
+    ? await assertStoreProfileKey(user.storeId, nextProfileKey)
+    : apiProfileField(trainee);
+  if (parsed.data.profile && !effectiveProfileKey) {
+    return errorResponse("Select a valid profile for this trainee", 400);
+  }
 
   if (parsed.data.positionIds !== undefined && parsed.data.positionIds.length > 0) {
     const matching = await prisma.position.count({
       where: {
         storeId: user.storeId,
-        profile: nextProfile,
+        profileKey: effectiveProfileKey!,
         id: { in: parsed.data.positionIds },
       },
     });
@@ -47,18 +55,24 @@ export async function PUT(
   }
 
   const updated = await prisma.$transaction(async (tx) => {
-    const data: { name?: string; startDate?: Date; profile?: typeof nextProfile } = {};
+    const data: { name?: string; startDate?: Date; profileKey?: string; profile?: "FOH" | "BOH" } = {};
     if (parsed.data.name !== undefined) data.name = parsed.data.name.trim();
     if (parsed.data.startDate !== undefined) data.startDate = new Date(parsed.data.startDate);
-    if (parsed.data.profile !== undefined) data.profile = parsed.data.profile;
+    if (parsed.data.profile !== undefined && effectiveProfileKey) {
+      Object.assign(data, profileWriteData(effectiveProfileKey));
+    }
     if (Object.keys(data).length > 0) {
       await tx.trainee.update({ where: { id: traineeId }, data });
     }
-    if (parsed.data.profile !== undefined && parsed.data.profile !== trainee.profile) {
+    if (
+      parsed.data.profile !== undefined &&
+      effectiveProfileKey &&
+      effectiveProfileKey !== apiProfileField(trainee)
+    ) {
       await tx.traineePosition.deleteMany({
         where: {
           traineeId,
-          position: { profile: { not: parsed.data.profile } },
+          position: { profileKey: { not: effectiveProfileKey } },
         },
       });
     }
@@ -75,7 +89,15 @@ export async function PUT(
     });
   });
 
-  return NextResponse.json({ trainee: updated });
+  await logActivity({
+    storeId: user.storeId,
+    userId: user.userId,
+    message: `Updated trainee "${updated.name}"`,
+  });
+
+  return NextResponse.json({
+    trainee: { ...updated, profile: apiProfileField(updated) },
+  });
 }
 
 export async function DELETE(
@@ -92,5 +114,10 @@ export async function DELETE(
   if (!trainee) return errorResponse("Trainee not found", 404);
 
   await prisma.trainee.delete({ where: { id: traineeId } });
+  await logActivity({
+    storeId: user.storeId,
+    userId: user.userId,
+    message: `Deleted trainee "${trainee.name}"`,
+  });
   return NextResponse.json({ success: true });
 }

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireAuth } from "@/lib/api";
+import { logActivity } from "@/lib/activity";
 import { hashPassword } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
@@ -38,6 +39,12 @@ export async function POST(request: Request) {
   await prisma.user.update({
     where: { id: user.userId },
     data: { passwordHash },
+  });
+
+  await logActivity({
+    storeId: user.storeId,
+    userId: user.userId,
+    message: "Set account password",
   });
 
   return NextResponse.json({ success: true });

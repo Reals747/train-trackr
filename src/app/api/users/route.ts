@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireAuth } from "@/lib/api";
+import { logActivity } from "@/lib/activity";
 import { hashPassword } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
@@ -49,6 +50,11 @@ export async function POST(request: Request) {
       storeId: user.storeId,
     },
     select: { id: true, name: true, username: true, role: true, createdAt: true },
+  });
+  await logActivity({
+    storeId: user.storeId,
+    userId: user.userId,
+    message: `Invited ${created.name} as ${created.role}`,
   });
   return NextResponse.json({ user: created });
 }

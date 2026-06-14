@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { errorResponse, requireAuth } from "@/lib/api";
+import { logActivity } from "@/lib/activity";
 import { prisma } from "@/lib/prisma";
 
 const appearanceSchema = z.object({
@@ -53,6 +54,12 @@ export async function PUT(request: Request) {
   await prisma.user.update({
     where: { id: user.userId },
     data: { appearanceJson: parsed.data },
+  });
+
+  await logActivity({
+    storeId: user.storeId,
+    userId: user.userId,
+    message: "Updated appearance preferences",
   });
 
   return NextResponse.json({ appearance: parsed.data });

@@ -2,6 +2,7 @@ import { Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { errorResponse, requireAuth, STORE_MANAGER_ROLES } from "@/lib/api";
+import { logActivity } from "@/lib/activity";
 import {
   activeProfileFromRequest,
   profileSchema,
@@ -9,6 +10,7 @@ import {
   resolveWriteProfile,
 } from "@/lib/profile";
 import { prisma, prismaHasTaskRow } from "@/lib/prisma";
+import { assertStoreProfileKey, listStoreProfiles, profileWriteData } from "@/lib/store-profiles-server";
 import { handleTasksError, staleClientError } from "@/lib/tasks-api";
 
 const postSchema = z.object({
@@ -29,7 +31,8 @@ export async function GET(request: Request) {
   if (error) return error;
   if (!prismaHasTaskRow()) return staleClientError();
 
-  const active = activeProfileFromRequest(request, user.activeProfile);
+  const profiles = await listStoreProfiles(user.storeId);
+  const active = activeProfileFromRequest(request, user.activeProfile, profiles.map((p) => p.key));
 
   try {
     const presets = await prisma.taskPreset.findMany({
@@ -52,30 +55,37 @@ export async function POST(request: Request) {
   if (!parsed.success) return errorResponse("Invalid preset payload");
   if (!prismaHasTaskRow()) return staleClientError();
 
-  const profile = resolveWriteProfile(user.activeProfile, parsed.data.profile);
-  if (!profile) return errorResponse("Select FOH or BOH profile for this preset");
+  const profileKey = resolveWriteProfile(user.activeProfile, parsed.data.profile);
+  if (!profileKey) return errorResponse("Select a valid profile for this preset");
+  const validatedKey = await assertStoreProfileKey(user.storeId, profileKey);
+  if (!validatedKey) return errorResponse("Select a valid profile for this preset");
 
   try {
     const existing = await prisma.taskPreset.findUnique({
       where: {
-        storeId_profile_text: { storeId: user.storeId, profile, text: parsed.data.text },
+        storeId_profileKey_text: { storeId: user.storeId, profileKey: validatedKey, text: parsed.data.text },
       },
       select: { id: true, text: true, order: true },
     });
     if (existing) return NextResponse.json({ preset: existing });
 
     const max = await prisma.taskPreset.aggregate({
-      where: { storeId: user.storeId, profile },
+      where: { storeId: user.storeId, profileKey: validatedKey },
       _max: { order: true },
     });
     const preset = await prisma.taskPreset.create({
       data: {
         storeId: user.storeId,
-        profile,
         text: parsed.data.text,
         order: (max._max.order ?? -1) + 1,
+        ...profileWriteData(validatedKey),
       },
       select: { id: true, text: true, order: true },
+    });
+    await logActivity({
+      storeId: user.storeId,
+      userId: user.userId,
+      message: `Added task preset "${preset.text}"`,
     });
     return NextResponse.json({ preset });
   } catch (e) {
@@ -94,7 +104,8 @@ export async function PATCH(request: Request) {
 
   try {
     if ("orderedIds" in parsed.data) {
-      const active = activeProfileFromRequest(request, user.activeProfile);
+      const profiles = await listStoreProfiles(user.storeId);
+  const active = activeProfileFromRequest(request, user.activeProfile, profiles.map((p) => p.key));
       const owned = await prisma.taskPreset.findMany({
         where: { storeId: user.storeId, ...profileWhere(active), id: { in: parsed.data.orderedIds } },
         select: { id: true },
@@ -107,6 +118,11 @@ export async function PATCH(request: Request) {
             prisma.taskPreset.update({ where: { id }, data: { order: index } }),
           ),
       );
+      await logActivity({
+        storeId: user.storeId,
+        userId: user.userId,
+        message: "Reordered task presets",
+      });
       return NextResponse.json({ ok: true });
     }
 
@@ -120,6 +136,11 @@ export async function PATCH(request: Request) {
       where: { id: parsed.data.id },
       data: { text: parsed.data.text },
       select: { id: true, text: true, order: true },
+    });
+    await logActivity({
+      storeId: user.storeId,
+      userId: user.userId,
+      message: `Renamed task preset to ${preset.text}`,
     });
     return NextResponse.json({ preset });
   } catch (e) {
@@ -142,11 +163,16 @@ export async function DELETE(request: Request) {
   try {
     const existing = await prisma.taskPreset.findUnique({
       where: { id: parsed.data.id },
-      select: { storeId: true },
+      select: { storeId: true, text: true },
     });
     if (existing?.storeId !== user.storeId) return errorResponse("Preset not found", 404);
 
     await prisma.taskPreset.delete({ where: { id: parsed.data.id } });
+    await logActivity({
+      storeId: user.storeId,
+      userId: user.userId,
+      message: `Deleted task preset "${existing.text}"`,
+    });
     return NextResponse.json({ ok: true });
   } catch (e) {
     return handleTasksError("[tasks/presets DELETE]", e, "Could not delete preset");

@@ -3,26 +3,23 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { hashPassword, setAuthCookie, signToken } from "@/lib/auth";
 import { jsonAuthRouteError } from "@/lib/auth-route-error-response";
+import { logActivity } from "@/lib/activity";
 import { prisma } from "@/lib/prisma";
 import { normalizeActiveProfile } from "@/lib/profile";
 import { STORE_CODE_REGEX } from "@/lib/store-code";
 
 /**
- * "Help, I don't have a password!" recovery flow.
+ * Self-service password set/reset for logged-out manager accounts (owner, admin,
+ * website developer).
  *
- * Use case: a trainer was promoted to ADMIN. Trainer accounts are created
- * without a password (the store code stands in), so the new admin can't
- * sign in via the regular owner/admin form because that form expects a
- * password.
+ * Use cases:
+ *   - A trainer was promoted to admin and never set a password.
+ *   - A manager forgot their password.
  *
- * This endpoint lets them set their FIRST password. To prevent abuse by
- * anyone who happens to hold the store code, we ONLY accept the request
- * when the user currently has `passwordHash IS NULL`. If a real password
- * has already been set, the request is rejected (the user must use the
- * normal login flow or reset via an admin).
+ * Recovery is gated by the 8-digit store code plus username. Trainers must
+ * continue using the "Invited Code" sign-in tab (no password).
  *
- * Successfully setting a password also signs the user in, so they're
- * dropped straight into the app.
+ * Successfully setting a password also signs the user in.
  */
 const usernameSchema = z
   .string()
@@ -91,20 +88,8 @@ export async function POST(request: Request) {
     }
 
     /**
-     * Refuse to overwrite an existing password. If the user has one, they
-     * must remember it (or have an owner reset their account out-of-band).
-     * This prevents anyone-with-the-store-code from impersonating an admin.
+     * Overwrite any existing password (first-time set or forgot-password reset).
      */
-    if (user.passwordHash) {
-      return NextResponse.json(
-        {
-          error:
-            "An account password is already set. Sign in with that password instead.",
-        },
-        { status: 409 },
-      );
-    }
-
     const passwordHash = await hashPassword(password);
     const updated = await prisma.user.update({
       where: { id: user.id },
@@ -120,6 +105,12 @@ export async function POST(request: Request) {
       name: updated.name,
     });
     await setAuthCookie(token);
+
+    await logActivity({
+      storeId: store.id,
+      userId: user.id,
+      message: "Reset account password",
+    });
 
     return NextResponse.json({
       user: {

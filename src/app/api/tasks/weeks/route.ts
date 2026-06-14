@@ -1,10 +1,12 @@
-import { Prisma, Profile } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { format } from "date-fns";
 import { errorResponse, requireAuth, STORE_MANAGER_ROLES } from "@/lib/api";
+import { logActivity } from "@/lib/activity";
 import { activeProfileFromRequest, profileWhere } from "@/lib/profile";
 import { prisma, prismaHasTaskRow } from "@/lib/prisma";
+import { listStoreProfiles, profileWriteData } from "@/lib/store-profiles-server";
 import { handleTasksError, staleClientError } from "@/lib/tasks-api";
 import { buildArchiveData } from "@/lib/tasks-server";
 
@@ -22,10 +24,10 @@ function defaultLabel(): string {
 async function uniqueLabel(
   storeId: string,
   base: string,
-  profile: Profile,
+  profileKey: string,
 ): Promise<string> {
   const existing = await prisma.taskWeekArchive.findMany({
-    where: { storeId, profile, label: { startsWith: base } },
+    where: { storeId, profileKey, label: { startsWith: base } },
     select: { label: true },
   });
   const taken = new Set(existing.map((w) => w.label));
@@ -41,7 +43,8 @@ export async function GET(request: Request) {
   if (error) return error;
   if (!prismaHasTaskRow()) return staleClientError();
 
-  const active = activeProfileFromRequest(request, user.activeProfile);
+  const profiles = await listStoreProfiles(user.storeId);
+  const active = activeProfileFromRequest(request, user.activeProfile, profiles.map((p) => p.key));
 
   try {
     const weeks = await prisma.taskWeekArchive.findMany({
@@ -68,7 +71,8 @@ export async function POST(request: Request) {
   if (!parsed.success) return errorResponse("Invalid week payload");
   if (!prismaHasTaskRow()) return staleClientError();
 
-  const active = activeProfileFromRequest(request, user.activeProfile);
+  const profiles = await listStoreProfiles(user.storeId);
+  const active = activeProfileFromRequest(request, user.activeProfile, profiles.map((p) => p.key));
 
   try {
     const data = await buildArchiveData(user.storeId, active);
@@ -82,16 +86,21 @@ export async function POST(request: Request) {
       prisma.taskWeekArchive.create({
         data: {
           storeId: user.storeId,
-          profile: active,
           label,
           data: data as unknown as Prisma.InputJsonValue,
+          ...profileWriteData(active),
         },
         select: { id: true, label: true, archivedAt: true },
       }),
       prisma.taskCell.deleteMany({
-        where: { row: { storeId: user.storeId, profile: active } },
+        where: { row: { storeId: user.storeId, profileKey: active } },
       }),
     ]);
+    await logActivity({
+      storeId: user.storeId,
+      userId: user.userId,
+      message: `Started new week "${week.label}"`,
+    });
     return NextResponse.json({ week });
   } catch (e) {
     return handleTasksError("[tasks/weeks POST]", e, "Could not start a new week");

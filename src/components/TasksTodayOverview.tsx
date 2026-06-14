@@ -18,9 +18,7 @@ function weekdayToColumnIndex(jsDay: number): number {
   return jsDay - 1;
 }
 
-type ActiveProfile = "FOH" | "BOH";
-
-export function TasksTodayOverview({ activeProfile = "FOH" }: { activeProfile?: ActiveProfile }) {
+export function TasksTodayOverview({ activeProfile = "FOH" }: { activeProfile?: string }) {
   const [rows, setRows] = useState<GridRow[]>([]);
   /** null until resolved on the client (avoids SSR/client hydration mismatch on the date). */
   const [todayColIndex, setTodayColIndex] = useState<number | null>(null);

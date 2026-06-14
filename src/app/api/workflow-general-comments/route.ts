@@ -2,6 +2,7 @@ import { Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { errorResponse, requireAuth } from "@/lib/api";
+import { logActivity } from "@/lib/activity";
 import { prisma, prismaHasWorkflowGeneralComments } from "@/lib/prisma";
 
 const putSchema = z.object({
@@ -128,6 +129,12 @@ export async function PUT(request: Request) {
       update: {
         generalComments: parsed.data.generalComments,
       },
+    });
+
+    await logActivity({
+      storeId: user.storeId,
+      userId: user.userId,
+      message: `Updated general comments for "${trainee.name}" (${position.name})`,
     });
 
     return NextResponse.json({ generalComments: row.generalComments });

@@ -5,6 +5,7 @@ import {
   useEffect,
   useState,
   type Dispatch,
+  type ReactNode,
   type SetStateAction,
 } from "react";
 import { createPortal } from "react-dom";
@@ -13,7 +14,15 @@ import { can, roleLabel, type Permission } from "@/lib/permissions";
 import { api } from "./api";
 import { ACCENT_SWATCHES, accentMatchesSwatch, accentSwatchFromValue } from "./appearance";
 import { AddTraineeModalFlow } from "./AddTraineeModalFlow";
-import { MoonIcon, PencilIcon, SettingsGearIcon, SunIcon, TrashIcon, WarningTriangleIcon } from "./icons";
+import {
+  ChevronDisclosureIcon,
+  MoonIcon,
+  PencilIcon,
+  SettingsGearIcon,
+  SunIcon,
+  TrashIcon,
+  WarningTriangleIcon,
+} from "./icons";
 import {
   DeleteStoreConfirmModal,
   DeleteTeamMemberConfirmModal,
@@ -22,6 +31,7 @@ import {
   ResetStoreCodeConfirmModal,
   TrainerInviteModal,
 } from "./settings-modals";
+import { StoreProfilesSection } from "./StoreProfilesSection";
 import { TrainingSetupSection } from "./TrainingSetupSection";
 import type {
   AccountDetails,
@@ -35,6 +45,7 @@ import type {
   SettingsCategory,
   StoreCodeKickScope,
   StoreDetails,
+  StoreProfileRow,
   TeamMember,
 } from "./types";
 
@@ -45,6 +56,7 @@ export function SettingsPanel({
   accountDetails,
   setAccountDetails,
   storeDetails,
+  storeProfiles,
   teamMembers,
   setTeamMembers,
   positions,
@@ -66,6 +78,7 @@ export function SettingsPanel({
   accountDetails: AccountDetails | null;
   setAccountDetails: Dispatch<SetStateAction<AccountDetails | null>>;
   storeDetails: StoreDetails | null;
+  storeProfiles: StoreProfileRow[];
   teamMembers: TeamMember[];
   setTeamMembers: Dispatch<SetStateAction<TeamMember[]>>;
   positions: Position[];
@@ -87,6 +100,7 @@ export function SettingsPanel({
     [effectiveRole],
   );
   const canViewStore = allow("settings.store.view");
+  const canManageProfiles = allow("settings.store.profiles");
   const canRenameStore = allow("settings.store.rename");
   const canDeleteStore = allow("settings.store.delete");
   const canManageTraining = allow("settings.trainingSetup");
@@ -166,6 +180,327 @@ export function SettingsPanel({
     ...(canManageMembers ? (["trainers"] as SettingsCategory[]) : []),
     ...(canDeleteTrainees ? (["traineeManagement"] as SettingsCategory[]) : []),
   ];
+
+  const sortMembersByName = (members: TeamMember[]) =>
+    [...members].sort((a, b) => {
+      const nameA = pendingNameOverrides[a.id] ?? a.name;
+      const nameB = pendingNameOverrides[b.id] ?? b.name;
+      return nameA.localeCompare(nameB, undefined, { sensitivity: "base" });
+    });
+
+  const trainerMembers = sortMembersByName(
+    teamMembers.filter((m) => m.role === "TRAINER" || m.role === "VIEWER"),
+  );
+  const adminMembers = sortMembersByName(teamMembers.filter((m) => m.role === "ADMIN"));
+  const ownerMembers = sortMembersByName(
+    teamMembers.filter((m) => m.role === "OWNER" || m.role === "WEBSITE_DEVELOPER"),
+  );
+
+  const renderTeamMember = (rawMember: TeamMember) => {
+    /**
+     * If a rename PATCH is in-flight, render the optimistic name from
+     * `pendingNameOverrides` instead of the (possibly stale) value from
+     * `teamMembers`. The parent re-polls every 5s and would otherwise
+     * clobber our optimistic update mid-flight.
+     */
+    const optimisticName = pendingNameOverrides[rawMember.id];
+    const member: TeamMember =
+      optimisticName !== undefined ? { ...rawMember, name: optimisticName } : rawMember;
+    const isUpdating = optimisticName !== undefined;
+    const isSelf = member.id === user.id;
+    const isOwner = member.role === "OWNER";
+    const isWebsiteDeveloper = member.role === "WEBSITE_DEVELOPER";
+    const isAdmin = member.role === "ADMIN";
+    const showPasswordWarning =
+      (member.role === "ADMIN" ||
+        member.role === "OWNER" ||
+        member.role === "WEBSITE_DEVELOPER") &&
+      !member.hasPassword;
+    const canSetOwnInitialPassword = isAdmin && isSelf && !member.hasPassword;
+    const isSelfPasswordFormOpen = selfPasswordFormOpenForId === member.id;
+    const canManageProtectedOwner = effectiveRole === "WEBSITE_DEVELOPER";
+    /**
+     * The role <select> + remove button are locked for:
+     *   - yourself (can't demote/remove self),
+     *   - the store owner (unless the caller is the website developer),
+     *   - the website developer (server-untouchable).
+     */
+    const roleLocked =
+      isSelf || isWebsiteDeveloper || (isOwner && !canManageProtectedOwner);
+    /**
+     * Name edit visibility:
+     * - You can always edit your own name.
+     * - Managers can edit anyone except the owner — unless the caller is the
+     *   owner or website developer.
+     */
+    const canEditName =
+      isSelf ||
+      (allow("members.updateRole") &&
+        (member.role !== "OWNER" ||
+          effectiveRole === "OWNER" ||
+          effectiveRole === "WEBSITE_DEVELOPER"));
+    return (
+      <ExpandableMemberRow
+        key={member.id}
+        summary={
+          <>
+            <span className="truncate">{member.name}</span>
+            {showPasswordWarning && (
+              <span
+                title="Password not set"
+                aria-label="Password not set"
+                className="shrink-0"
+              >
+                <WarningTriangleIcon className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+              </span>
+            )}
+            {isSelf && (
+              <span className="shrink-0 text-xs font-normal opacity-70">(you)</span>
+            )}
+            {isUpdating && (
+              <span
+                className="shrink-0 text-xs font-normal italic opacity-70"
+                aria-live="polite"
+              >
+                Updating…
+              </span>
+            )}
+          </>
+        }
+      >
+        <div className="flex flex-col gap-3">
+          <div>
+            <p className="flex items-center gap-2 font-semibold">
+              <span>{member.name}</span>
+              {isSelf && (
+                <span className="text-xs font-normal opacity-70">(you)</span>
+              )}
+              {canEditName && (
+                <button
+                  type="button"
+                  aria-label={
+                    isSelf ? "Edit your name" : `Edit name for ${member.name}`
+                  }
+                  title={isSelf ? "Edit your name" : `Edit name for ${member.name}`}
+                  className="inline-flex items-center justify-center rounded p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-800 dark:text-slate-400 dark:hover:bg-slate-700 dark:hover:text-slate-100"
+                  onClick={() => {
+                    setEditMemberErr("");
+                    setEditingMember({ id: member.id, name: member.name });
+                  }}
+                >
+                  <PencilIcon className="h-4 w-4" />
+                </button>
+              )}
+            </p>
+            <p>@{member.username}</p>
+            <p className="opacity-70">Joined {formatDateTime(member.createdAt)}</p>
+            {isAdmin && (
+              <p>
+                <span className="opacity-70">Password: </span>
+                {member.hasPassword ? (
+                  <span className="opacity-70">Set</span>
+                ) : (
+                  <span className="font-medium text-amber-600 dark:text-amber-400">
+                    Not set
+                  </span>
+                )}
+              </p>
+            )}
+            {canSetOwnInitialPassword && (
+              <div className="mt-2 space-y-2">
+                {!isSelfPasswordFormOpen ? (
+                  <button
+                    type="button"
+                    className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-medium hover:bg-slate-100 dark:border-slate-600 dark:hover:bg-slate-700"
+                    onClick={() => {
+                      setSelfPasswordFormOpenForId(member.id);
+                      setSelfPasswordError("");
+                      setSelfPasswordSuccess("");
+                      setSelfPasswordDraft("");
+                      setSelfPasswordConfirmDraft("");
+                    }}
+                  >
+                    Set account password
+                  </button>
+                ) : (
+                  <form
+                    className="space-y-2 rounded-lg border border-slate-200 p-2 dark:border-slate-700"
+                    onSubmit={async (e) => {
+                      e.preventDefault();
+                      setSelfPasswordError("");
+                      setSelfPasswordSuccess("");
+                      if (selfPasswordDraft.length < 8) {
+                        setSelfPasswordError("Password must be at least 8 characters.");
+                        return;
+                      }
+                      if (selfPasswordDraft !== selfPasswordConfirmDraft) {
+                        setSelfPasswordError("Passwords do not match.");
+                        return;
+                      }
+                      setSelfPasswordBusy(true);
+                      try {
+                        await api("/api/settings/account/password", {
+                          method: "POST",
+                          body: JSON.stringify({ password: selfPasswordDraft }),
+                        });
+                        setSelfPasswordSuccess("Password set.");
+                        setSelfPasswordFormOpenForId(null);
+                        setSelfPasswordDraft("");
+                        setSelfPasswordConfirmDraft("");
+                        await refreshCore();
+                      } catch (err) {
+                        setSelfPasswordError((err as Error).message);
+                      } finally {
+                        setSelfPasswordBusy(false);
+                      }
+                    }}
+                  >
+                    <input
+                      type="password"
+                      value={selfPasswordDraft}
+                      onChange={(e) => setSelfPasswordDraft(e.target.value)}
+                      className="w-full rounded-lg border border-slate-200 bg-card px-2 py-1 text-xs text-foreground dark:border-slate-600"
+                      placeholder="New password (min 8)"
+                      autoComplete="new-password"
+                      disabled={selfPasswordBusy}
+                    />
+                    <input
+                      type="password"
+                      value={selfPasswordConfirmDraft}
+                      onChange={(e) => setSelfPasswordConfirmDraft(e.target.value)}
+                      className="w-full rounded-lg border border-slate-200 bg-card px-2 py-1 text-xs text-foreground dark:border-slate-600"
+                      placeholder="Confirm password"
+                      autoComplete="new-password"
+                      disabled={selfPasswordBusy}
+                    />
+                    <div className="flex gap-2">
+                      <button
+                        type="submit"
+                        disabled={selfPasswordBusy}
+                        className="btn-accent rounded-lg px-3 py-1 text-xs font-medium disabled:opacity-60"
+                      >
+                        {selfPasswordBusy ? "Saving..." : "Save password"}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={selfPasswordBusy}
+                        className="rounded-lg border border-slate-300 px-3 py-1 text-xs font-medium hover:bg-slate-100 dark:border-slate-600 dark:hover:bg-slate-700"
+                        onClick={() => {
+                          setSelfPasswordFormOpenForId(null);
+                          setSelfPasswordError("");
+                          setSelfPasswordSuccess("");
+                          setSelfPasswordDraft("");
+                          setSelfPasswordConfirmDraft("");
+                        }}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </form>
+                )}
+                {isSelf && selfPasswordError && (
+                  <p className="text-xs text-rose-600">{selfPasswordError}</p>
+                )}
+                {isSelf && selfPasswordSuccess && (
+                  <p className="text-xs text-emerald-600 dark:text-emerald-400">
+                    {selfPasswordSuccess}
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+          <div className="flex flex-col gap-2 border-t border-slate-200 pt-3 dark:border-slate-600">
+            <label
+              className={`flex flex-col gap-1 text-xs font-medium ${roleLocked ? "opacity-50" : "opacity-80"}`}
+            >
+              Role
+              {isWebsiteDeveloper ? (
+                <span className="w-full rounded-lg border bg-card px-3 py-2 text-sm text-foreground">
+                  {roleLabel("WEBSITE_DEVELOPER")}
+                </span>
+              ) : isOwner && !canManageProtectedOwner ? (
+                <span className="w-full rounded-lg border bg-card px-3 py-2 text-sm text-foreground">
+                  {roleLabel("OWNER")}
+                </span>
+              ) : (
+                <select
+                  disabled={isSelf}
+                  className={`w-full rounded-lg border border-slate-200 bg-card px-3 py-2 text-sm text-foreground dark:border-slate-600 ${isSelf ? "cursor-not-allowed opacity-60" : ""}`}
+                  value={member.role}
+                  onChange={async (e) => {
+                    if (isSelf) return;
+                    const next = e.target.value;
+                    if (
+                      next !== "ADMIN" &&
+                      next !== "TRAINER" &&
+                      !(next === "OWNER" && canAssignOwner)
+                    ) {
+                      return;
+                    }
+                    if (next === member.role) return;
+                    setTeamActionError("");
+                    try {
+                      await api(`/api/settings/trainers/${member.id}`, {
+                        method: "PATCH",
+                        body: JSON.stringify({ role: next }),
+                      });
+                      await refreshCore();
+                      if (member.id === user.id) {
+                        await onSessionRefresh();
+                      }
+                    } catch (err) {
+                      setTeamActionError((err as Error).message);
+                    }
+                  }}
+                >
+                  {canAssignOwner && <option value="OWNER">{roleLabel("OWNER")}</option>}
+                  <option value="ADMIN">{roleLabel("ADMIN")}</option>
+                  <option value="TRAINER">{roleLabel("TRAINER")}</option>
+                </select>
+              )}
+            </label>
+            <button
+              type="button"
+              disabled={roleLocked}
+              className={
+                roleLocked
+                  ? "w-full cursor-not-allowed rounded-lg border border-neutral-300 bg-neutral-200 px-3 py-2 text-sm font-medium text-neutral-500 dark:border-neutral-600 dark:bg-neutral-700 dark:text-neutral-400"
+                  : "w-full rounded-lg bg-rose-600 px-3 py-2 text-sm font-medium text-white hover:bg-rose-700"
+              }
+              onClick={() => {
+                if (roleLocked) return;
+                setTeamActionError("");
+                setMemberPendingDelete(member);
+              }}
+            >
+              {member.role === "TRAINER"
+                ? "Remove Trainer"
+                : member.role === "OWNER"
+                  ? "Remove owner"
+                  : member.role === "WEBSITE_DEVELOPER"
+                    ? "Remove developer"
+                    : "Remove admin"}
+            </button>
+            {isSelf && (
+              <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                You can&apos;t change your own role or remove yourself here.
+              </p>
+            )}
+            {isOwner && !isSelf && !canManageProtectedOwner && (
+              <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                The store owner cannot be reassigned or removed here.
+              </p>
+            )}
+            {isWebsiteDeveloper && !isSelf && (
+              <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                The website developer cannot be reassigned or removed.
+              </p>
+            )}
+          </div>
+        </div>
+      </ExpandableMemberRow>
+    );
+  };
 
   return (
     <section className="rounded-xl bg-card p-4 shadow-sm">
@@ -256,6 +591,12 @@ export function SettingsPanel({
                 <strong>Positions:</strong> {storeDetails?._count.positions ?? 0} |{" "}
                 <strong>Trainees:</strong> {storeDetails?._count.trainees ?? 0}
               </p>
+              {canManageProfiles && (
+                <StoreProfilesSection
+                  profiles={storeProfiles}
+                  onProfilesChange={refreshCore}
+                />
+              )}
               {canRenameStore ? (
                 <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-800 dark:border-slate-600 dark:bg-slate-800/50 dark:text-slate-200">
                   <p className="mb-2 font-semibold">Store name</p>
@@ -682,300 +1023,36 @@ export function SettingsPanel({
                   onClose={() => setTrainerInviteModalOpen(false)}
                 />
               )}
-              <p className="mb-2 text-sm font-semibold">Team members</p>
               {teamActionError && !memberPendingDelete && (
                 <p className="mb-2 text-sm text-rose-600">{teamActionError}</p>
               )}
-              <div className="space-y-3 text-sm">
-              {teamMembers.length === 0 && (
-                <p className="opacity-70">
+              {teamMembers.length === 0 ? (
+                <p className="text-sm opacity-70">
                   Loading team members… If this keeps saying empty, make sure the
                   server is running the latest Prisma client.
                 </p>
-              )}
-              {teamMembers.map((rawMember) => {
-                /**
-                 * If a rename PATCH is in-flight, render the optimistic name from
-                 * `pendingNameOverrides` instead of the (possibly stale) value from
-                 * `teamMembers`. The parent re-polls every 5s and would otherwise
-                 * clobber our optimistic update mid-flight.
-                 */
-                const optimisticName = pendingNameOverrides[rawMember.id];
-                const member: TeamMember =
-                  optimisticName !== undefined
-                    ? { ...rawMember, name: optimisticName }
-                    : rawMember;
-                const isUpdating = optimisticName !== undefined;
-                const isSelf = member.id === user.id;
-                const isOwner = member.role === "OWNER";
-                const isWebsiteDeveloper = member.role === "WEBSITE_DEVELOPER";
-                const isAdmin = member.role === "ADMIN";
-                const canSetOwnInitialPassword = isAdmin && isSelf && !member.hasPassword;
-                const isSelfPasswordFormOpen = selfPasswordFormOpenForId === member.id;
-                /**
-                 * The role <select> + remove button are locked for:
-                 *   - yourself (can't demote/remove self),
-                 *   - the store owner (server rejects this anyway),
-                 *   - the website developer (server-untouchable).
-                 */
-                const roleLocked = isSelf || isOwner || isWebsiteDeveloper;
-                /**
-                 * Name edit visibility:
-                 * - You can always edit your own name.
-                 * - Managers (members.updateRole permission) can edit anyone — except
-                 *   only the owner can edit the owner's name.
-                 */
-                const canEditName =
-                  isSelf ||
-                  (allow("members.updateRole") &&
-                    (member.role !== "OWNER" || effectiveRole === "OWNER"));
-                return (
-                <div
-                  key={member.id}
-                  className="rounded-lg bg-slate-100 p-3 text-left text-sm dark:bg-slate-700"
-                >
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                    <div>
-                      <p className="flex items-center gap-2 font-semibold">
-                        <span>{member.name}</span>
-                        {isSelf && (
-                          <span className="text-xs font-normal opacity-70">(you)</span>
-                        )}
-                        {canEditName && (
-                          <button
-                            type="button"
-                            aria-label={
-                              isSelf ? "Edit your name" : `Edit name for ${member.name}`
-                            }
-                            title={isSelf ? "Edit your name" : `Edit name for ${member.name}`}
-                            className="inline-flex items-center justify-center rounded p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-800 dark:text-slate-400 dark:hover:bg-slate-700 dark:hover:text-slate-100"
-                            onClick={() => {
-                              setEditMemberErr("");
-                              setEditingMember({ id: member.id, name: member.name });
-                            }}
-                          >
-                            <PencilIcon className="h-4 w-4" />
-                          </button>
-                        )}
-                        {isUpdating && (
-                          <span
-                            className="text-xs font-normal italic opacity-70"
-                            aria-live="polite"
-                          >
-                            Updating…
-                          </span>
-                        )}
-                      </p>
-                      <p>@{member.username}</p>
-                      <p className="opacity-70">
-                        Joined {formatDateTime(member.createdAt)}
-                      </p>
-                      {isAdmin && (
-                        <p className="opacity-70">
-                          Password: {member.hasPassword ? "Set" : "Not set"}
-                        </p>
-                      )}
-                      {canSetOwnInitialPassword && (
-                        <div className="mt-2 space-y-2">
-                          {!isSelfPasswordFormOpen ? (
-                            <button
-                              type="button"
-                              className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-medium hover:bg-slate-100 dark:border-slate-600 dark:hover:bg-slate-700"
-                              onClick={() => {
-                                setSelfPasswordFormOpenForId(member.id);
-                                setSelfPasswordError("");
-                                setSelfPasswordSuccess("");
-                                setSelfPasswordDraft("");
-                                setSelfPasswordConfirmDraft("");
-                              }}
-                            >
-                              Set account password
-                            </button>
-                          ) : (
-                            <form
-                              className="space-y-2 rounded-lg border border-slate-200 p-2 dark:border-slate-700"
-                              onSubmit={async (e) => {
-                                e.preventDefault();
-                                setSelfPasswordError("");
-                                setSelfPasswordSuccess("");
-                                if (selfPasswordDraft.length < 8) {
-                                  setSelfPasswordError("Password must be at least 8 characters.");
-                                  return;
-                                }
-                                if (selfPasswordDraft !== selfPasswordConfirmDraft) {
-                                  setSelfPasswordError("Passwords do not match.");
-                                  return;
-                                }
-                                setSelfPasswordBusy(true);
-                                try {
-                                  await api("/api/settings/account/password", {
-                                    method: "POST",
-                                    body: JSON.stringify({ password: selfPasswordDraft }),
-                                  });
-                                  setSelfPasswordSuccess("Password set.");
-                                  setSelfPasswordFormOpenForId(null);
-                                  setSelfPasswordDraft("");
-                                  setSelfPasswordConfirmDraft("");
-                                  await refreshCore();
-                                } catch (err) {
-                                  setSelfPasswordError((err as Error).message);
-                                } finally {
-                                  setSelfPasswordBusy(false);
-                                }
-                              }}
-                            >
-                              <input
-                                type="password"
-                                value={selfPasswordDraft}
-                                onChange={(e) => setSelfPasswordDraft(e.target.value)}
-                                className="w-full rounded-lg border border-slate-200 bg-card px-2 py-1 text-xs text-foreground dark:border-slate-600"
-                                placeholder="New password (min 8)"
-                                autoComplete="new-password"
-                                disabled={selfPasswordBusy}
-                              />
-                              <input
-                                type="password"
-                                value={selfPasswordConfirmDraft}
-                                onChange={(e) => setSelfPasswordConfirmDraft(e.target.value)}
-                                className="w-full rounded-lg border border-slate-200 bg-card px-2 py-1 text-xs text-foreground dark:border-slate-600"
-                                placeholder="Confirm password"
-                                autoComplete="new-password"
-                                disabled={selfPasswordBusy}
-                              />
-                              <div className="flex gap-2">
-                                <button
-                                  type="submit"
-                                  disabled={selfPasswordBusy}
-                                  className="btn-accent rounded-lg px-3 py-1 text-xs font-medium disabled:opacity-60"
-                                >
-                                  {selfPasswordBusy ? "Saving..." : "Save password"}
-                                </button>
-                                <button
-                                  type="button"
-                                  disabled={selfPasswordBusy}
-                                  className="rounded-lg border border-slate-300 px-3 py-1 text-xs font-medium hover:bg-slate-100 dark:border-slate-600 dark:hover:bg-slate-700"
-                                  onClick={() => {
-                                    setSelfPasswordFormOpenForId(null);
-                                    setSelfPasswordError("");
-                                    setSelfPasswordSuccess("");
-                                    setSelfPasswordDraft("");
-                                    setSelfPasswordConfirmDraft("");
-                                  }}
-                                >
-                                  Cancel
-                                </button>
-                              </div>
-                            </form>
-                          )}
-                          {isSelf && selfPasswordError && (
-                            <p className="text-xs text-rose-600">{selfPasswordError}</p>
-                          )}
-                          {isSelf && selfPasswordSuccess && (
-                            <p className="text-xs text-emerald-600 dark:text-emerald-400">
-                              {selfPasswordSuccess}
-                            </p>
-                          )}
-                        </div>
-                      )}
+              ) : (
+                <div className="grid gap-4 sm:grid-cols-3">
+                  <div className="min-w-0">
+                    <p className="mb-2 text-sm font-semibold">Trainers</p>
+                    <div className="space-y-2 text-sm">
+                      {trainerMembers.map(renderTeamMember)}
                     </div>
-                    <div className="flex flex-col gap-2 sm:items-end">
-                      <label
-                        className={`flex flex-col gap-1 text-xs font-medium ${roleLocked ? "opacity-50" : "opacity-80"}`}
-                      >
-                        Role
-                        {isWebsiteDeveloper ? (
-                          /*
-                           * Website developer is a fixed, server-untouchable role.
-                           * No <select> at all — render only the label so it can't
-                           * be hovered/keyboard-clicked into a no-op interaction.
-                           */
-                          <span className="min-w-[10rem] rounded-lg border bg-card px-3 py-2 text-sm text-foreground">
-                            {roleLabel("WEBSITE_DEVELOPER")}
-                          </span>
-                        ) : isOwner ? (
-                          <span className="min-w-[10rem] rounded-lg border bg-card px-3 py-2 text-sm text-foreground">
-                            {roleLabel("OWNER")}
-                          </span>
-                        ) : (
-                          <select
-                            disabled={isSelf}
-                            className={`min-w-[10rem] rounded-lg border border-slate-200 bg-card px-3 py-2 text-sm text-foreground dark:border-slate-600 ${isSelf ? "cursor-not-allowed opacity-60" : ""}`}
-                            value={member.role}
-                            onChange={async (e) => {
-                              if (isSelf) return;
-                              const next = e.target.value;
-                              if (
-                                next !== "ADMIN" &&
-                                next !== "TRAINER" &&
-                                !(next === "OWNER" && canAssignOwner)
-                              ) {
-                                return;
-                              }
-                              if (next === member.role) return;
-                              setTeamActionError("");
-                              try {
-                                await api(`/api/settings/trainers/${member.id}`, {
-                                  method: "PATCH",
-                                  body: JSON.stringify({ role: next }),
-                                });
-                                await refreshCore();
-                                if (member.id === user.id) {
-                                  await onSessionRefresh();
-                                }
-                              } catch (err) {
-                                setTeamActionError((err as Error).message);
-                              }
-                            }}
-                          >
-                            {canAssignOwner && <option value="OWNER">{roleLabel("OWNER")}</option>}
-                            <option value="ADMIN">{roleLabel("ADMIN")}</option>
-                            <option value="TRAINER">{roleLabel("TRAINER")}</option>
-                          </select>
-                        )}
-                      </label>
-                      <button
-                        type="button"
-                        disabled={roleLocked}
-                        className={
-                          roleLocked
-                            ? "cursor-not-allowed rounded-lg border border-neutral-300 bg-neutral-200 px-3 py-2 text-sm font-medium text-neutral-500 dark:border-neutral-600 dark:bg-neutral-700 dark:text-neutral-400"
-                            : "rounded-lg bg-rose-600 px-3 py-2 text-sm font-medium text-white hover:bg-rose-700"
-                        }
-                        onClick={() => {
-                          if (roleLocked) return;
-                          setTeamActionError("");
-                          setMemberPendingDelete(member);
-                        }}
-                      >
-                        {member.role === "TRAINER"
-                          ? "Remove Trainer"
-                          : member.role === "OWNER"
-                            ? "Remove owner"
-                            : member.role === "WEBSITE_DEVELOPER"
-                              ? "Remove developer"
-                              : "Remove admin"}
-                      </button>
-                      {isSelf && (
-                        <p className="max-w-[14rem] text-right text-xs text-neutral-500 dark:text-neutral-400">
-                          You can&apos;t change your own role or remove yourself here.
-                        </p>
-                      )}
-                      {isOwner && !isSelf && (
-                        <p className="max-w-[14rem] text-right text-xs text-neutral-500 dark:text-neutral-400">
-                          The store owner cannot be reassigned or removed here.
-                        </p>
-                      )}
-                      {isWebsiteDeveloper && !isSelf && (
-                        <p className="max-w-[14rem] text-right text-xs text-neutral-500 dark:text-neutral-400">
-                          The website developer cannot be reassigned or removed.
-                        </p>
-                      )}
+                  </div>
+                  <div className="min-w-0">
+                    <p className="mb-2 text-sm font-semibold">Admins</p>
+                    <div className="space-y-2 text-sm">
+                      {adminMembers.map(renderTeamMember)}
+                    </div>
+                  </div>
+                  <div className="min-w-0">
+                    <p className="mb-2 text-sm font-semibold">Owners</p>
+                    <div className="space-y-2 text-sm">
+                      {ownerMembers.map(renderTeamMember)}
                     </div>
                   </div>
                 </div>
-              );
-              })}
-              </div>
+              )}
             </>
           )}
 
@@ -997,60 +1074,66 @@ export function SettingsPanel({
               {traineeActionError && !traineePendingDelete && (
                 <p className="mb-2 text-sm text-rose-600">{traineeActionError}</p>
               )}
-              <div className="space-y-3 text-sm">
+              <div className="space-y-2 text-sm">
                 {dashboard.length === 0 && (
-                  <p className="opacity-70">No trainees yet.</p>
+                  <p className="rounded-lg bg-slate-100 p-6 text-center opacity-80 dark:bg-slate-700">
+                    No trainees yet.
+                  </p>
                 )}
-                {dashboard.map((row) => {
+                {[...dashboard]
+                  .sort((a, b) =>
+                    a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
+                  )
+                  .map((row) => {
                   const busyDelete = deletingTraineeId === row.id;
                   const busyEdit = savingTraineeId === row.id;
                   const busy = busyDelete || busyEdit;
                   return (
                     <div
                       key={row.id}
-                      className="flex items-center justify-between gap-3 rounded-lg border p-3"
+                      className="rounded-lg bg-slate-100 text-left dark:bg-slate-700"
                     >
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center justify-between gap-2">
-                          <strong className="truncate">{row.name}</strong>
-                          <span className="shrink-0 text-sm font-semibold">
-                            {row.percentage}%
-                          </span>
+                      <div className="flex items-center justify-between gap-3 px-3 py-2">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center justify-between gap-2">
+                            <strong className="truncate font-medium">{row.name}</strong>
+                            <span className="shrink-0 font-semibold">{row.percentage}%</span>
+                          </div>
+                          <p className="mt-0.5 text-xs opacity-70">
+                            Completed {row.positionsFullyComplete}/{row.storePositionCount} ·
+                            Remaining {row.remainingPositions}
+                          </p>
                         </div>
-                        <p className="mt-0.5 text-xs opacity-70">
-                          Completed {row.positionsFullyComplete}/{row.storePositionCount} ·
-                          Remaining {row.remainingPositions}
-                        </p>
-                      </div>
-                      <div className="flex shrink-0 gap-2">
-                        <button
-                          type="button"
-                          aria-label={`Edit trainee ${row.name}`}
-                          title={`Edit ${row.name}`}
-                          disabled={busy}
-                          className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-slate-300 bg-slate-100 text-slate-700 hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 dark:hover:bg-slate-600"
-                          onClick={() => {
-                            if (busy) return;
-                            setTraineeActionError("");
-                            setTraineePendingEdit(row);
-                          }}
-                        >
-                          <PencilIcon className="h-5 w-5" />
-                        </button>
-                        <button
-                          type="button"
-                          aria-label={`Delete trainee ${row.name}`}
-                          title={`Delete ${row.name}`}
-                          disabled={busy}
-                          className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-rose-600 text-white hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-60"
-                          onClick={() => {
-                            if (busy) return;
-                            setTraineeActionError("");
-                            setTraineePendingDelete(row);
-                          }}
-                        >
-                          <TrashIcon className="h-5 w-5" />
-                        </button>
+                        <div className="flex shrink-0 gap-2">
+                          <button
+                            type="button"
+                            aria-label={`Edit trainee ${row.name}`}
+                            title={`Edit ${row.name}`}
+                            disabled={busy}
+                            className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-card text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-600 dark:text-slate-100 dark:hover:bg-slate-600/50"
+                            onClick={() => {
+                              if (busy) return;
+                              setTraineeActionError("");
+                              setTraineePendingEdit(row);
+                            }}
+                          >
+                            <PencilIcon className="h-5 w-5" />
+                          </button>
+                          <button
+                            type="button"
+                            aria-label={`Delete trainee ${row.name}`}
+                            title={`Delete ${row.name}`}
+                            disabled={busy}
+                            className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-rose-600 text-white hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-60"
+                            onClick={() => {
+                              if (busy) return;
+                              setTraineeActionError("");
+                              setTraineePendingDelete(row);
+                            }}
+                          >
+                            <TrashIcon className="h-5 w-5" />
+                          </button>
+                        </div>
                       </div>
                     </div>
                   );
@@ -1371,5 +1454,36 @@ export function SettingsPanel({
           document.body,
         )}
     </section>
+  );
+}
+
+function ExpandableMemberRow({
+  summary,
+  children,
+}: {
+  summary: ReactNode;
+  children: ReactNode;
+}) {
+  const [expanded, setExpanded] = useState(false);
+
+  return (
+    <div className="rounded-lg text-left text-sm bg-slate-100 dark:bg-slate-700">
+      <div className="flex items-center gap-2 px-3 py-2">
+        <button
+          type="button"
+          className="flex min-w-0 flex-1 items-center gap-2 text-left font-medium"
+          onClick={() => setExpanded((v) => !v)}
+          aria-expanded={expanded}
+        >
+          <ChevronDisclosureIcon expanded={expanded} />
+          {summary}
+        </button>
+      </div>
+      {expanded && (
+        <div className="space-y-3 border-t border-slate-200 px-3 py-3 dark:border-slate-600">
+          {children}
+        </div>
+      )}
+    </div>
   );
 }

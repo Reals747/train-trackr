@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { errorResponse, requireAuth } from "@/lib/api";
+import { logActivity } from "@/lib/activity";
 import { prisma } from "@/lib/prisma";
 
 const schema = z.object({
@@ -24,7 +25,7 @@ export async function POST(
 
   const position = await prisma.position.findFirst({
     where: { id: positionId, storeId: user.storeId },
-    select: { id: true },
+    select: { id: true, name: true },
   });
   if (!position) return errorResponse("Position not found", 404);
 
@@ -49,6 +50,12 @@ export async function POST(
       }),
     ),
   );
+
+  await logActivity({
+    storeId: user.storeId,
+    userId: user.userId,
+    message: `Reordered checklist items in ${position.name}`,
+  });
 
   return NextResponse.json({ success: true });
 }

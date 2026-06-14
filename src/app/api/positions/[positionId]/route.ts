@@ -2,8 +2,9 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { errorResponse, requireAuth } from "@/lib/api";
 import { logActivity } from "@/lib/activity";
-import { profileSchema } from "@/lib/profile";
+import { apiProfileField, profileSchema } from "@/lib/profile";
 import { prisma } from "@/lib/prisma";
+import { assertStoreProfileKey, profileWriteData } from "@/lib/store-profiles-server";
 
 const schema = z.object({
   name: z.string().min(2).optional(),
@@ -40,8 +41,8 @@ export async function PATCH(
     storeId: user.storeId,
     userId: user.userId,
     message: parsed.data.hidden
-      ? `Hidden position ${current.name}`
-      : `Restored position ${current.name}`,
+      ? `Hidden position "${current.name}"`
+      : `Restored position "${current.name}"`,
   });
 
   return NextResponse.json({ position: updated });
@@ -63,7 +64,13 @@ export async function PUT(
   });
   if (!current) return errorResponse("Position not found", 404);
 
-  const nextProfile = parsed.data.profile ?? current.profile;
+  const nextProfileKey = parsed.data.profile ?? apiProfileField(current);
+  const validatedKey = parsed.data.profile
+    ? await assertStoreProfileKey(user.storeId, nextProfileKey)
+    : nextProfileKey;
+  if (parsed.data.profile && !validatedKey) {
+    return errorResponse("Select a valid profile for this position");
+  }
   const nextName = parsed.data.name?.trim() ?? current.name;
 
   const updated = await prisma.$transaction(async (tx) => {
@@ -71,14 +78,20 @@ export async function PUT(
       where: { id: positionId },
       data: {
         ...(parsed.data.name !== undefined ? { name: nextName } : {}),
-        ...(parsed.data.profile !== undefined ? { profile: nextProfile } : {}),
+        ...(parsed.data.profile !== undefined && validatedKey
+          ? profileWriteData(validatedKey)
+          : {}),
       },
     });
-    if (parsed.data.profile !== undefined && nextProfile !== current.profile) {
+    if (
+      parsed.data.profile !== undefined &&
+      validatedKey &&
+      validatedKey !== apiProfileField(current)
+    ) {
       await tx.traineePosition.deleteMany({
         where: {
           positionId,
-          trainee: { profile: { not: nextProfile } },
+          trainee: { profileKey: { not: validatedKey } },
         },
       });
     }
@@ -89,9 +102,9 @@ export async function PUT(
     storeId: user.storeId,
     userId: user.userId,
     message:
-      parsed.data.profile !== undefined && nextProfile !== current.profile
-        ? `Moved position ${current.name} to ${nextProfile}`
-        : `Renamed position ${current.name} to ${updated.name}`,
+      parsed.data.profile !== undefined && validatedKey && validatedKey !== apiProfileField(current)
+        ? `Moved position "${current.name}" to ${validatedKey}`
+        : `Renamed position "${current.name}" to "${updated.name}"`,
   });
 
   return NextResponse.json({ position: updated });
@@ -114,7 +127,7 @@ export async function DELETE(
   await logActivity({
     storeId: user.storeId,
     userId: user.userId,
-    message: `Deleted position ${current.name}`,
+    message: `Deleted position "${current.name}"`,
   });
   return NextResponse.json({ success: true });
 }

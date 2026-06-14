@@ -384,14 +384,12 @@ function PastWeekModal({
 
 /* ------------------------------------------------------------------ Main manager */
 
-type ActiveProfile = "FOH" | "BOH";
-
 export function TasksManager({
   manageMode,
   activeProfile = "FOH",
 }: {
   manageMode: boolean;
-  activeProfile?: ActiveProfile;
+  activeProfile?: string;
 }) {
   const profileQuery = `?profile=${encodeURIComponent(activeProfile)}`;
   const [rows, setRows] = useState<GridRow[]>([]);
@@ -508,7 +506,7 @@ export function TasksManager({
   /* ---- row helpers ---- */
 
   const addRow = async () => {
-    const body: { profile: "FOH" | "BOH" } = { profile: activeProfile };
+    const body: { profile: string } = { profile: activeProfile };
     try {
       const data = await clientApi<{ row: { id: string; label: string; order: number } }>(
         "/api/tasks/rows",
@@ -562,7 +560,7 @@ export function TasksManager({
   /* ---- preset helpers ---- */
 
   const addPreset = async (text: string) => {
-    const body: { text: string; profile: "FOH" | "BOH" } = { text, profile: activeProfile };
+    const body: { text: string; profile: string } = { text, profile: activeProfile };
     try {
       const data = await clientApi<{ preset: TaskPresetDto }>("/api/tasks/presets", {
         method: "POST",

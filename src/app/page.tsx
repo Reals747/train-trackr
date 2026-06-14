@@ -27,6 +27,7 @@ import type {
   Position,
   SettingsCategory,
   StoreDetails,
+  StoreProfileRow,
   TeamMember,
   Trainee,
 } from "./_home/types";
@@ -48,6 +49,7 @@ export default function Home() {
   const [search, setSearch] = useState("");
   const [accountDetails, setAccountDetails] = useState<AccountDetails | null>(null);
   const [storeDetails, setStoreDetails] = useState<StoreDetails | null>(null);
+  const [storeProfiles, setStoreProfiles] = useState<StoreProfileRow[]>([]);
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
   // eslint-disable-next-line @typescript-eslint/no-unused-vars -- AnnouncementsSection is temporarily hidden; keep state/fetcher so we can re-enable quickly.
   const [announcements, setAnnouncements] = useState<AnnouncementRow[]>([]);
@@ -79,18 +81,25 @@ export default function Home() {
 
   const refreshCore = useCallback(async () => {
     const pq = (path: string) => withProfileQuery(path, activeProfileRef.current);
-    const [positionsRes, traineesRes, dashboardRes, accountRes, annRes] = await Promise.all([
+    const [positionsRes, traineesRes, dashboardRes, accountRes, annRes, profilesRes] =
+      await Promise.all([
       api<{ positions: Position[] }>(pq("/api/positions")),
       api<{ trainees: Trainee[] }>(pq("/api/trainees")),
       api<{ trainees: DashboardRow[] }>(pq("/api/dashboard")),
       api<{ account: AccountDetails }>("/api/settings/account"),
       api<{ announcements: AnnouncementRow[] }>("/api/announcements"),
+      api<{ profiles: StoreProfileRow[] }>("/api/store-profiles"),
     ]);
     setPositions(positionsRes.positions);
     setTrainees(traineesRes.trainees);
     setDashboard(dashboardRes.trainees);
     setAccountDetails(accountRes.account);
     setAnnouncements(annRes.announcements);
+    setStoreProfiles(profilesRes.profiles);
+    setActiveProfile((prev) => {
+      if (profilesRes.profiles.some((profile) => profile.key === prev)) return prev;
+      return profilesRes.profiles[0]?.key ?? "FOH";
+    });
 
     /** Keep session role aligned with DB (e.g. promoted/demoted in another tab). */
     setUser((prev) => {
@@ -290,6 +299,13 @@ export default function Home() {
     if (!canViewActivity && tab === "activity") setTab("dashboard");
   }, [canViewActivity, tab]);
 
+  useEffect(() => {
+    if (!canViewActivity || tab !== "activity") return;
+    void api<{ logs: ActivityLog[] }>("/api/activity")
+      .then((res) => setActivity(res.logs))
+      .catch(() => setActivity([]));
+  }, [canViewActivity, tab]);
+
   if (!sessionResolved) {
     return <LoadingScreen />;
   }
@@ -320,6 +336,7 @@ export default function Home() {
             <ProfileToggle
               value={activeProfile}
               onChange={handleActiveProfileChange}
+              profiles={storeProfiles}
               disabled={profileSaving}
             />
             {canViewActivity ? (
@@ -525,14 +542,24 @@ export default function Home() {
 
       {canViewActivity && tab === "activity" && (
         <section className="rounded-xl bg-card p-4 shadow-sm">
-          <h2 className="mb-3 text-lg font-semibold">Activity Feed</h2>
+          <h2 className="mb-1 text-lg font-semibold">Activity Feed</h2>
+          <p className="mb-3 text-sm opacity-75">
+            Latest 20 store actions. Older entries are removed automatically.
+          </p>
           <div className="space-y-2">
-            {activity.map((log) => (
-              <div key={log.id} className="rounded-lg border p-3 text-sm">
-                <p>{log.message}</p>
-                <p className="opacity-70">{log.actor} • {formatDateTime(log.createdAt)}</p>
-              </div>
-            ))}
+            {activity.length === 0 ? (
+              <p className="rounded-lg border border-dashed p-4 text-sm opacity-70">
+                No activity yet. Changes across training, tasks, settings, and team
+                management will appear here.
+              </p>
+            ) : (
+              activity.map((log) => (
+                <div key={log.id} className="rounded-lg border p-3 text-sm">
+                  <p>{log.message}</p>
+                  <p className="opacity-70">{log.actor} • {formatDateTime(log.createdAt)}</p>
+                </div>
+              ))
+            )}
           </div>
         </section>
       )}
@@ -545,6 +572,7 @@ export default function Home() {
           accountDetails={accountDetails}
           setAccountDetails={setAccountDetails}
           storeDetails={storeDetails}
+          storeProfiles={storeProfiles}
           teamMembers={teamMembers}
           setTeamMembers={setTeamMembers}
           positions={positions}

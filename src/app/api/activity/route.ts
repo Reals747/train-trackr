@@ -1,3 +1,4 @@
+import { ACTIVITY_LOG_LIMIT } from "@/lib/activity";
 import { requireAuth } from "@/lib/api";
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
@@ -10,7 +11,7 @@ export async function GET() {
     where: { storeId: user.storeId },
     include: { user: { select: { name: true } } },
     orderBy: { createdAt: "desc" },
-    take: 50,
+    take: ACTIVITY_LOG_LIMIT,
   });
   return NextResponse.json({
     logs: logs.map((log) => ({

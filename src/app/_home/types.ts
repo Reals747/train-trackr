@@ -1,11 +1,14 @@
 import type { RoleName } from "@/lib/permissions";
+import type { StoreProfileRow } from "@/lib/store-profiles";
 
 export type Role = RoleName;
 
-/** Stored on data rows. */
-export type DataProfile = "FOH" | "BOH";
-/** Per-user view filter. Only FOH/BOH exist; the combined "BOTH" view was removed. */
-export type ActiveProfile = DataProfile;
+/** Stored on data rows — a store profile key. */
+export type DataProfile = string;
+/** Per-user view filter — must match a store profile key. */
+export type ActiveProfile = string;
+
+export type { StoreProfileRow };
 
 export type AppUser = {
   id: string;

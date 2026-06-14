@@ -5,11 +5,13 @@ import { logActivity } from "@/lib/activity";
 import { can } from "@/lib/permissions";
 import {
   activeProfileFromRequest,
+  apiProfileField,
   profileSchema,
   profileWhere,
   resolveWriteProfile,
 } from "@/lib/profile";
 import { prisma } from "@/lib/prisma";
+import { assertStoreProfileKey, listStoreProfiles, profileWriteData } from "@/lib/store-profiles-server";
 
 const createSchema = z.object({
   name: z.string().min(2),
@@ -28,7 +30,8 @@ export async function GET(request: Request) {
   /** Workflow checklist UI must never list hidden positions; Training Setup omits this param so managers still see all. */
   const includeHidden = can(user.role, "positions.manage") && !excludeHidden;
 
-  const active = activeProfileFromRequest(request, user.activeProfile);
+  const profiles = await listStoreProfiles(user.storeId);
+  const active = activeProfileFromRequest(request, user.activeProfile, profiles.map((p) => p.key));
 
   const positions = await prisma.position.findMany({
     where: {
@@ -41,7 +44,13 @@ export async function GET(request: Request) {
       items: { orderBy: { order: "asc" } },
     },
   });
-  return NextResponse.json({ positions });
+  return NextResponse.json({
+    positions: positions.map((position) => ({
+      ...position,
+      profile: apiProfileField(position),
+      items: position.items,
+    })),
+  });
 }
 
 export async function POST(request: Request) {
@@ -51,30 +60,36 @@ export async function POST(request: Request) {
   const parsed = createSchema.safeParse(await request.json());
   if (!parsed.success) return errorResponse("Position name is required");
 
-  const profile = resolveWriteProfile(user.activeProfile, parsed.data.profile);
-  if (!profile) {
-    return errorResponse("Select FOH or BOH profile for this position");
+  const profileKey = resolveWriteProfile(user.activeProfile, parsed.data.profile);
+  if (!profileKey) {
+    return errorResponse("Select a valid profile for this position");
+  }
+  const validatedKey = await assertStoreProfileKey(user.storeId, profileKey);
+  if (!validatedKey) {
+    return errorResponse("Select a valid profile for this position");
   }
 
   try {
     const maxOrder = await prisma.position.aggregate({
-      where: { storeId: user.storeId, profile },
+      where: { storeId: user.storeId, profileKey: validatedKey },
       _max: { order: true },
     });
     const position = await prisma.position.create({
       data: {
         storeId: user.storeId,
-        profile,
         name: parsed.data.name.trim(),
         order: (maxOrder._max.order ?? -1) + 1,
+        ...profileWriteData(validatedKey),
       },
     });
     await logActivity({
       storeId: user.storeId,
       userId: user.userId,
-      message: `Created position ${position.name}`,
+      message: `Created position "${position.name}"`,
     });
-    return NextResponse.json({ position });
+    return NextResponse.json({
+      position: { ...position, profile: apiProfileField(position) },
+    });
   } catch {
     return errorResponse("Position name already exists", 409);
   }
