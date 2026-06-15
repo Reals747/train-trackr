@@ -14,3 +14,17 @@ This app is a **live website** with real production data. Treat every database a
 - **When in doubt**, choose the path that preserves existing data and allows gradual rollout (nullable fields, defaults, dual-write/backfill, feature flags).
 
 Local development may use fresh databases; production must always remain intact.
+
+## Version number before commit & push
+
+The on-screen version is shown in the site footer (`SiteFooter` → `APP_VERSION`). It is built at compile time from `package.json`’s `version` field plus build metadata in `next.config.ts` (e.g. `2.1.0+847` locally, or `2.1.0+abc1234` on Vercel).
+
+**Before committing and pushing any update to GitHub**, always ask the user how they want to handle the version number. Do not bump, skip, or assume a versioning scheme on your own.
+
+When asking, include the current `package.json` version and a short reminder of what changes on deploy (base semver vs. auto-generated `+` suffix). Typical options to offer:
+
+- **No change** — keep `package.json` version as-is (the `+` suffix still updates per build/commit).
+- **Patch / minor / major bump** — update `package.json` `version` (and only other version files if the user requests).
+- **Custom version** — use whatever semver string the user specifies.
+
+Only update `package.json` (or related version config) after the user confirms. If they ask you to commit and push in the same request, resolve the version question first, then commit and push.
