@@ -15,7 +15,7 @@ import { ProfileToggle } from "./_home/ProfileToggle";
 import { withProfileQuery } from "./_home/profile-query";
 import { SettingsPanel } from "./_home/SettingsPanel";
 import { TraineeDashboardModal } from "./_home/TraineeDashboardModal";
-import { UnderDevelopmentNotice } from "./_home/UnderDevelopmentNotice";
+// import { UnderDevelopmentNotice } from "./_home/UnderDevelopmentNotice"; — Schedule tab hidden
 import type {
   AccountDetails,
   ActivityLog,
@@ -374,13 +374,13 @@ export default function Home() {
         </div>
       </header>
 
-      <nav className="flex flex-row flex-wrap gap-2 rounded-xl bg-card p-2 shadow-sm sm:flex-nowrap">
+      <nav className="flex flex-row flex-nowrap gap-2 rounded-xl bg-card p-2 shadow-sm">
         {(
           [
             ["dashboard", "Dashboard"],
             ["workflow", "Training"],
             ["tasks", "Tasks"],
-            ["schedule", "Schedule"],
+            // ["schedule", "Schedule"], — hidden; restore with Schedule section below
             // ["trainees", "Trainees"], — hidden; restore with TraineePanel block below
           ] as const
         ).map(([key, label]) => (
@@ -388,7 +388,7 @@ export default function Home() {
             key={key}
             type="button"
             onClick={() => setTab(key)}
-            className={`min-w-0 grow basis-[calc(50%-0.25rem)] whitespace-nowrap rounded-lg px-2 py-3 text-xs font-medium sm:flex-1 sm:basis-0 sm:px-3 sm:text-sm ${tab === key ? "btn-accent" : "bg-slate-100 text-slate-900 dark:bg-slate-700 dark:text-slate-100"}`}
+            className={`min-w-0 flex-1 basis-0 whitespace-nowrap rounded-lg px-2 py-3 text-xs font-medium sm:px-3 sm:text-sm ${tab === key ? "btn-accent" : "bg-slate-100 text-slate-900 dark:bg-slate-700 dark:text-slate-100"}`}
           >
             {label}
           </button>
@@ -522,12 +522,14 @@ export default function Home() {
         </section>
       )}
 
+      {/* Schedule tab hidden — uncomment tab entry above and UnderDevelopmentNotice import to restore
       {tab === "schedule" && (
         <section className="rounded-xl bg-card p-4 shadow-sm">
           <h2 className="mb-3 text-lg font-semibold">Schedule</h2>
           <UnderDevelopmentNotice />
         </section>
       )}
+      */}
 
       {/* Trainees tab hidden — see commented TraineePanel below
       {tab === "trainees" && (
