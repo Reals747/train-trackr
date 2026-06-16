@@ -19,7 +19,7 @@ import { useProfileSwitch } from "./_home/useProfileSwitch";
 import { withProfileQuery } from "./_home/profile-query";
 import { SettingsPanel } from "./_home/SettingsPanel";
 import { TraineeDashboardModal } from "./_home/TraineeDashboardModal";
-// import { UnderDevelopmentNotice } from "./_home/UnderDevelopmentNotice"; — Schedule tab hidden
+import { UnderDevelopmentNotice } from "./_home/UnderDevelopmentNotice";
 import type {
   AccountDetails,
   ActivityLog,
@@ -368,13 +368,13 @@ export default function Home() {
         </div>
       </header>
 
-      <nav className="flex flex-row flex-nowrap gap-2 rounded-xl bg-card p-2 shadow-sm">
+      <nav className="flex flex-wrap gap-2 rounded-xl bg-card p-2 shadow-sm sm:flex-nowrap">
         {(
           [
             ["dashboard", "Dashboard"],
             ["workflow", "Training"],
             ["tasks", "Tasks"],
-            // ["schedule", "Schedule"], — hidden; restore with Schedule section below
+            ["schedule", "Schedule"],
             // ["trainees", "Trainees"], — hidden; restore with TraineePanel block below
           ] as const
         ).map(([key, label]) => (
@@ -514,14 +514,12 @@ export default function Home() {
         </section>
       )}
 
-      {/* Schedule tab hidden — uncomment tab entry above and UnderDevelopmentNotice import to restore
       {tab === "schedule" && (
         <section className="rounded-xl bg-card p-4 shadow-sm">
           <h2 className="mb-3 text-lg font-semibold">Schedule</h2>
           <UnderDevelopmentNotice />
         </section>
       )}
-      */}
 
       {/* Trainees tab hidden — see commented TraineePanel below
       {tab === "trainees" && (

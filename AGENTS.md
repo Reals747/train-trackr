@@ -21,10 +21,12 @@ The on-screen version is shown in the site footer (`SiteFooter` → `APP_VERSION
 
 **Before committing and pushing any update to GitHub**, always ask the user how they want to handle the version number. Do not bump, skip, or assume a versioning scheme on your own.
 
-When asking, include the current `package.json` version and a short reminder of what changes on deploy (base semver vs. auto-generated `+` suffix). Typical options to offer:
+**First**, give a brief summary of what changed in the update (2–5 bullets or a short paragraph) so the user can judge the semver level — e.g. bug fixes → patch, new features → minor, breaking changes → major. Mention anything user-facing, API/schema changes, or deploy-only/no-op releases when relevant.
+
+When asking about the version, include the current `package.json` version, that change summary, and a short reminder of what changes on deploy (base semver vs. auto-generated `+` suffix). Typical options to offer:
 
 - **No change** — keep `package.json` version as-is (the `+` suffix still updates per build/commit).
 - **Patch / minor / major bump** — update `package.json` `version` (and only other version files if the user requests).
 - **Custom version** — use whatever semver string the user specifies.
 
-Only update `package.json` (or related version config) after the user confirms. If they ask you to commit and push in the same request, resolve the version question first, then commit and push.
+Only update `package.json` (or related version config) after the user confirms. If they ask you to commit and push in the same request, provide the change summary and resolve the version question first, then commit and push.

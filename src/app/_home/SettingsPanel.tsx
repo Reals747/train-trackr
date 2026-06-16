@@ -1003,6 +1003,7 @@ export function SettingsPanel({
               setPositions={setPositions}
               onRefresh={refreshCore}
               activeProfile={activeProfile}
+              storeProfiles={storeProfiles}
             />
           )}
 

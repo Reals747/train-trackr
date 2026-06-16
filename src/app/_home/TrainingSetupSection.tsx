@@ -34,7 +34,7 @@ import {
   PencilIcon,
   TrashIcon,
 } from "./icons";
-import type { ActiveProfile, ChecklistKind, DataProfile, Position } from "./types";
+import type { ActiveProfile, ChecklistKind, DataProfile, Position, StoreProfileRow } from "./types";
 
 /** Positions and checklists — Settings → Training Setup (managers only). */
 export function TrainingSetupSection({
@@ -42,13 +42,16 @@ export function TrainingSetupSection({
   setPositions,
   onRefresh,
   activeProfile,
+  storeProfiles,
 }: {
   positions: Position[];
   setPositions: Dispatch<SetStateAction<Position[]>>;
   onRefresh: () => Promise<void>;
   activeProfile: ActiveProfile;
+  storeProfiles: StoreProfileRow[];
 }) {
   const [createOpen, setCreateOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   const [createName, setCreateName] = useState("");
   const [createErr, setCreateErr] = useState("");
   const [createSaving, setCreateSaving] = useState(false);
@@ -102,6 +105,18 @@ export function TrainingSetupSection({
     return () => window.removeEventListener("keydown", onKey);
   }, [createOpen]);
 
+  useEffect(() => {
+    if (!importOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setImportOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [importOpen]);
+
+  const activeProfileName =
+    storeProfiles.find((profile) => profile.key === activeProfile)?.name ?? activeProfile;
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -109,17 +124,26 @@ export function TrainingSetupSection({
           Expand a position to view checklist items. Hidden positions stay in this list for you but are
           hidden from trainers until restored.
         </p>
-        <button
-          type="button"
-          className="btn-accent shrink-0 rounded-lg px-4 py-2 font-medium"
-          onClick={() => {
-            setCreateName("");
-            setCreateErr("");
-            setCreateOpen(true);
-          }}
-        >
-          Create Position
-        </button>
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
+          <button
+            type="button"
+            className="btn-accent shrink-0 inline-flex h-10 items-center rounded-lg px-4 text-sm font-medium"
+            onClick={() => {
+              setCreateName("");
+              setCreateErr("");
+              setCreateOpen(true);
+            }}
+          >
+            Create Position
+          </button>
+          <button
+            type="button"
+            className="shrink-0 inline-flex h-10 items-center rounded-lg border border-slate-200 bg-slate-100 px-4 text-sm font-medium text-slate-900 hover:bg-slate-200/90 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 dark:hover:bg-slate-600"
+            onClick={() => setImportOpen(true)}
+          >
+            Import Position
+          </button>
+        </div>
       </div>
 
       {createOpen && (
@@ -194,6 +218,15 @@ export function TrainingSetupSection({
             </div>
           </div>
         </div>
+      )}
+
+      {importOpen && (
+        <ImportPositionsModal
+          activeProfile={activeProfile}
+          activeProfileName={activeProfileName}
+          onClose={() => setImportOpen(false)}
+          onImported={onRefresh}
+        />
       )}
 
       <DndContext
@@ -941,6 +974,217 @@ function PositionTrainingRow({
           </div>,
           document.body,
         )}
+    </div>
+  );
+}
+
+type ImportCandidate = {
+  id: string;
+  name: string;
+  profileKey: string;
+  profileName: string;
+  hidden: boolean;
+  itemCount: number;
+  nameTakenOnTarget: boolean;
+};
+
+function ImportPositionsModal({
+  activeProfile,
+  activeProfileName,
+  onClose,
+  onImported,
+}: {
+  activeProfile: ActiveProfile;
+  activeProfileName: string;
+  onClose: () => void;
+  onImported: () => Promise<void>;
+}) {
+  const [loading, setLoading] = useState(true);
+  const [importing, setImporting] = useState(false);
+  const [error, setError] = useState("");
+  const [candidates, setCandidates] = useState<ImportCandidate[]>([]);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      setLoading(true);
+      setError("");
+      try {
+        const res = await api<{ positions: ImportCandidate[] }>(
+          `/api/positions/import?targetProfile=${encodeURIComponent(activeProfile)}`,
+        );
+        if (!cancelled) {
+          setCandidates(res.positions);
+          setSelectedIds(new Set());
+        }
+      } catch (e) {
+        if (!cancelled) {
+          setError((e as Error).message);
+          setCandidates([]);
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeProfile]);
+
+  const selectableIds = useMemo(
+    () => candidates.filter((candidate) => !candidate.nameTakenOnTarget).map((candidate) => candidate.id),
+    [candidates],
+  );
+  const allSelectableSelected =
+    selectableIds.length > 0 && selectableIds.every((id) => selectedIds.has(id));
+
+  function toggleSelected(id: string, disabled: boolean) {
+    if (disabled) return;
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="import-positions-title"
+      onMouseDown={(e) => {
+        if (importing) return;
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div
+        className="flex max-h-[min(90vh,720px)] w-full max-w-lg flex-col overflow-hidden rounded-xl border bg-card shadow-lg"
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        <div className="border-b p-5">
+          <h3 id="import-positions-title" className="text-lg font-semibold">
+            Import positions
+          </h3>
+          <p className="mt-2 text-sm opacity-80">
+            Copy positions from other profiles into <strong className="font-semibold">{activeProfileName}</strong>.
+            Original positions are left unchanged.
+          </p>
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-y-auto p-5">
+          {loading ? (
+            <p className="text-sm opacity-80" role="status">
+              Loading positions…
+            </p>
+          ) : error ? (
+            <p className="text-sm text-rose-600">{error}</p>
+          ) : candidates.length === 0 ? (
+            <p className="text-sm opacity-80">
+              No positions from other profiles are available to import.
+            </p>
+          ) : (
+            <>
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <p className="text-sm opacity-80">Select positions to duplicate.</p>
+                <button
+                  type="button"
+                  className="text-sm font-medium text-slate-700 underline-offset-2 hover:underline dark:text-slate-200"
+                  disabled={selectableIds.length === 0}
+                  onClick={() => {
+                    setSelectedIds(allSelectableSelected ? new Set() : new Set(selectableIds));
+                  }}
+                >
+                  {allSelectableSelected ? "Clear all" : "Select all"}
+                </button>
+              </div>
+              <ul className="space-y-2">
+                {candidates.map((candidate) => {
+                  const disabled = candidate.nameTakenOnTarget;
+                  const checked = selectedIds.has(candidate.id);
+                  return (
+                    <li key={candidate.id}>
+                      <label
+                        className={`flex items-start gap-3 rounded-lg border p-3 text-sm ${
+                          disabled
+                            ? "cursor-not-allowed border-slate-200 bg-slate-50 opacity-60 dark:border-slate-700 dark:bg-slate-800/40"
+                            : checked
+                              ? "cursor-pointer border-slate-300 bg-slate-100 dark:border-slate-500 dark:bg-slate-700"
+                              : "cursor-pointer border-slate-200 bg-card hover:bg-slate-50 dark:border-slate-600 dark:hover:bg-slate-800/50"
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          className="mt-1 shrink-0"
+                          checked={checked}
+                          disabled={disabled || importing}
+                          onChange={() => toggleSelected(candidate.id, disabled)}
+                        />
+                        <span className="min-w-0 flex-1">
+                          <span className="flex flex-wrap items-center gap-2">
+                            <span className="font-medium">{candidate.name}</span>
+                            <span className="rounded bg-slate-200 px-2 py-0.5 text-xs font-medium text-slate-700 dark:bg-slate-600 dark:text-slate-100">
+                              {candidate.profileName}
+                            </span>
+                            {candidate.hidden && (
+                              <span className="rounded bg-slate-200 px-1.5 py-0.5 text-xs dark:bg-slate-600">
+                                Hidden
+                              </span>
+                            )}
+                          </span>
+                          <span className="mt-1 block text-xs opacity-70">
+                            {candidate.itemCount} checklist item{candidate.itemCount === 1 ? "" : "s"}
+                            {disabled ? " · Already exists on this profile" : ""}
+                          </span>
+                        </span>
+                      </label>
+                    </li>
+                  );
+                })}
+              </ul>
+            </>
+          )}
+        </div>
+
+        <div className="flex justify-end gap-2 border-t p-5">
+          <button
+            type="button"
+            className="rounded-lg border px-4 py-2 text-sm font-medium"
+            disabled={importing}
+            onClick={onClose}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            className="btn-accent rounded-lg px-4 py-2 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-40"
+            disabled={importing || selectedIds.size === 0}
+            onClick={async () => {
+              setError("");
+              setImporting(true);
+              try {
+                await api("/api/positions/import", {
+                  method: "POST",
+                  body: JSON.stringify({
+                    positionIds: [...selectedIds],
+                    targetProfile: activeProfile,
+                  }),
+                });
+                await onImported();
+                onClose();
+              } catch (e) {
+                setError((e as Error).message);
+              } finally {
+                setImporting(false);
+              }
+            }}
+          >
+            {importing ? "Importing…" : "Import selected"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
