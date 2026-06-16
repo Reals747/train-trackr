@@ -100,7 +100,7 @@ export function TraineeDashboardModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4 pt-[max(1.5rem,env(safe-area-inset-top,0px))] pb-[max(1.5rem,env(safe-area-inset-bottom,0px))] sm:pt-[max(2rem,env(safe-area-inset-top,0px))] sm:pb-[max(2rem,env(safe-area-inset-bottom,0px))]"
       role="dialog"
       aria-modal="true"
       aria-labelledby="trainee-dashboard-modal-title"
@@ -108,7 +108,7 @@ export function TraineeDashboardModal({
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="max-h-[min(90vh,720px)] w-full max-w-lg overflow-y-auto rounded-xl border bg-card p-5 shadow-lg">
+      <div className="max-h-full min-h-0 w-full max-w-lg overflow-y-auto overscroll-contain rounded-xl border bg-card p-5 shadow-lg">
         <div className="mb-4 flex items-start justify-between gap-3">
           <div>
             <h2 id="trainee-dashboard-modal-title" className="text-lg font-semibold">

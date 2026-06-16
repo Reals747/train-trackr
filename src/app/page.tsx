@@ -10,8 +10,12 @@ import { TasksTodayOverview } from "@/components/TasksTodayOverview";
 import { api } from "./_home/api";
 import { ACCENT_SWATCHES, DEFAULT_APPEARANCE } from "./_home/appearance";
 import { ActivityHistoryIcon, SettingsGearIcon } from "./_home/icons";
+import { ExpandableHeaderButton } from "./_home/ExpandableHeaderButton";
+import { ExpandableNavTab } from "./_home/ExpandableNavTab";
 import { AuthScreen } from "./_home/AuthScreen";
 import { ProfileToggle } from "./_home/ProfileToggle";
+import { SwitchProfileConfirmModal } from "./_home/settings-modals";
+import { useProfileSwitch } from "./_home/useProfileSwitch";
 import { withProfileQuery } from "./_home/profile-query";
 import { SettingsPanel } from "./_home/SettingsPanel";
 import { TraineeDashboardModal } from "./_home/TraineeDashboardModal";
@@ -61,7 +65,6 @@ export default function Home() {
       : false,
   );
   const [activeProfile, setActiveProfile] = useState<ActiveProfile>("FOH");
-  const [profileSaving, setProfileSaving] = useState(false);
 
   const canViewActivity = can(user?.role, "activity.view");
   /** Same gate as Settings → Trainee Management (owner/admin). */
@@ -139,6 +142,30 @@ export default function Home() {
 
   const refreshCoreRef = useRef(refreshCore);
   refreshCoreRef.current = refreshCore;
+
+  const {
+    profileSaving,
+    pendingProfileKey,
+    pendingProfileName,
+    profileSwitchError,
+    requestProfileSwitch,
+    confirmPendingProfileSwitch,
+    cancelPendingProfileSwitch,
+  } = useProfileSwitch({
+    role: user?.role,
+    activeProfile,
+    setActiveProfile,
+    storeProfiles,
+    saveProfile: (body) =>
+      api("/api/settings/profile", {
+        method: "PUT",
+        body: JSON.stringify(body),
+      }),
+    onSuccess: async (next) => {
+      setUser((u) => (u ? { ...u, activeProfile: next } : u));
+      await refreshCoreRef.current();
+    },
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -249,25 +276,6 @@ export default function Home() {
     return () => clearInterval(interval);
   }, [user, refreshCore]);
 
-  const handleActiveProfileChange = async (next: ActiveProfile) => {
-    if (next === activeProfile || profileSaving) return;
-    const prev = activeProfile;
-    setActiveProfile(next);
-    setProfileSaving(true);
-    try {
-      await api("/api/settings/profile", {
-        method: "PUT",
-        body: JSON.stringify({ activeProfile: next }),
-      });
-      setUser((u) => (u ? { ...u, activeProfile: next } : u));
-      await refreshCore();
-    } catch {
-      setActiveProfile(prev);
-    } finally {
-      setProfileSaving(false);
-    }
-  };
-
   const isTraineeChecklistComplete = useCallback((row: DashboardRow) => row.percentage >= 100, []);
 
   const filteredDashboard = useMemo(
@@ -335,41 +343,27 @@ export default function Home() {
           <div className="flex flex-wrap items-center justify-end gap-2">
             <ProfileToggle
               value={activeProfile}
-              onChange={handleActiveProfileChange}
+              onChange={requestProfileSwitch}
               profiles={storeProfiles}
               disabled={profileSaving}
             />
             {canViewActivity ? (
-              <button
-                type="button"
-                className={`inline-flex min-h-12 min-w-12 items-center justify-center rounded-lg px-3 py-2 text-sm font-medium ${
-                  tab === "activity"
-                    ? "btn-accent ring-2 ring-offset-2 ring-white/30"
-                    : "border border-slate-200 bg-slate-100 text-slate-900 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100"
-                }`}
-                aria-label="Activity"
-                aria-pressed={tab === "activity"}
+              <ExpandableHeaderButton
+                label="Activity Feed"
+                active={tab === "activity"}
                 onClick={() => setTab("activity")}
-              >
-                <ActivityHistoryIcon className="h-5 w-5" />
-              </button>
+                icon={<ActivityHistoryIcon className="h-5 w-5" />}
+              />
             ) : null}
-            <button
-              type="button"
-              className={`inline-flex min-h-12 min-w-12 items-center justify-center rounded-lg px-3 py-2 text-sm font-medium ${
-                tab === "settings"
-                  ? "btn-accent ring-2 ring-offset-2 ring-white/30"
-                  : "border border-slate-200 bg-slate-100 text-slate-900 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100"
-              }`}
-              aria-label="Settings"
-              aria-pressed={tab === "settings"}
+            <ExpandableHeaderButton
+              label="Settings"
+              active={tab === "settings"}
               onClick={() => {
                 setTab("settings");
                 setSettingsCategory("account");
               }}
-            >
-              <SettingsGearIcon className="h-5 w-5" />
-            </button>
+              icon={<SettingsGearIcon className="h-5 w-5" />}
+            />
           </div>
         </div>
       </header>
@@ -384,14 +378,12 @@ export default function Home() {
             // ["trainees", "Trainees"], — hidden; restore with TraineePanel block below
           ] as const
         ).map(([key, label]) => (
-          <button
+          <ExpandableNavTab
             key={key}
-            type="button"
+            label={label}
+            active={tab === key}
             onClick={() => setTab(key)}
-            className={`min-w-0 flex-1 basis-0 whitespace-nowrap rounded-lg px-2 py-3 text-xs font-medium sm:px-3 sm:text-sm ${tab === key ? "btn-accent" : "bg-slate-100 text-slate-900 dark:bg-slate-700 dark:text-slate-100"}`}
-          >
-            {label}
-          </button>
+          />
         ))}
       </nav>
 
@@ -548,7 +540,7 @@ export default function Home() {
           <p className="mb-3 text-sm opacity-75">
             Latest 20 store actions. Older entries are removed automatically.
           </p>
-          <div className="space-y-2">
+          <div className="space-y-3">
             {activity.length === 0 ? (
               <p className="rounded-lg border border-dashed p-4 text-sm opacity-70">
                 No activity yet. Changes across training, tasks, settings, and team
@@ -556,9 +548,14 @@ export default function Home() {
               </p>
             ) : (
               activity.map((log) => (
-                <div key={log.id} className="rounded-lg border p-3 text-sm">
-                  <p>{log.message}</p>
-                  <p className="opacity-70">{log.actor} • {formatDateTime(log.createdAt)}</p>
+                <div
+                  key={log.id}
+                  className="rounded-lg bg-slate-100 p-3 text-sm text-slate-900 dark:bg-slate-700 dark:text-slate-100"
+                >
+                  <p className="font-medium">{log.message}</p>
+                  <p className="mt-0.5 text-xs opacity-70">
+                    {log.actor} • {formatDateTime(log.createdAt)}
+                  </p>
                 </div>
               ))
             )}
@@ -607,6 +604,16 @@ export default function Home() {
           key={dashboardModalRow.id}
           row={dashboardModalRow}
           onClose={() => setDashboardModalTraineeId(null)}
+        />
+      )}
+
+      {pendingProfileKey && (
+        <SwitchProfileConfirmModal
+          targetProfileName={pendingProfileName}
+          busy={profileSaving}
+          error={profileSwitchError}
+          onClose={cancelPendingProfileSwitch}
+          onConfirm={confirmPendingProfileSwitch}
         />
       )}
     </main>

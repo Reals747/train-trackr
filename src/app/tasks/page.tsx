@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { ProfileToggle } from "@/app/_home/ProfileToggle";
+import { SwitchProfileConfirmModal } from "@/app/_home/settings-modals";
+import { useProfileSwitch } from "@/app/_home/useProfileSwitch";
 import type { ActiveProfile, StoreProfileRow } from "@/app/_home/types";
 import { clientApi } from "@/lib/client-api";
 import { MANAGER_ROLES, type RoleName } from "@/lib/permissions";
@@ -12,8 +14,27 @@ export default function TasksFullPage() {
   const [role, setRole] = useState<RoleName | null>(null);
   const [activeProfile, setActiveProfile] = useState<ActiveProfile>("FOH");
   const [storeProfiles, setStoreProfiles] = useState<StoreProfileRow[]>([]);
-  const [profileSaving, setProfileSaving] = useState(false);
   const [manageMode, setManageMode] = useState(false);
+
+  const {
+    profileSaving,
+    pendingProfileKey,
+    pendingProfileName,
+    profileSwitchError,
+    requestProfileSwitch,
+    confirmPendingProfileSwitch,
+    cancelPendingProfileSwitch,
+  } = useProfileSwitch({
+    role,
+    activeProfile,
+    setActiveProfile,
+    storeProfiles,
+    saveProfile: (body) =>
+      clientApi("/api/settings/profile", {
+        method: "PUT",
+        body: JSON.stringify(body),
+      }),
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -46,23 +67,6 @@ export default function TasksFullPage() {
     };
   }, []);
 
-  const handleActiveProfileChange = async (next: ActiveProfile) => {
-    if (next === activeProfile || profileSaving) return;
-    const prev = activeProfile;
-    setActiveProfile(next);
-    setProfileSaving(true);
-    try {
-      await clientApi("/api/settings/profile", {
-        method: "PUT",
-        body: JSON.stringify({ activeProfile: next }),
-      });
-    } catch {
-      setActiveProfile(prev);
-    } finally {
-      setProfileSaving(false);
-    }
-  };
-
   const canManage = role !== null && MANAGER_ROLES.includes(role);
 
   return (
@@ -72,7 +76,7 @@ export default function TasksFullPage() {
         <div className="flex flex-wrap items-center justify-end gap-2">
           <ProfileToggle
             value={activeProfile}
-            onChange={handleActiveProfileChange}
+            onChange={requestProfileSwitch}
             profiles={storeProfiles}
             disabled={profileSaving}
           />
@@ -101,6 +105,16 @@ export default function TasksFullPage() {
       <section className="rounded-xl bg-card p-4 shadow-sm">
         <TasksManager manageMode={manageMode} activeProfile={activeProfile} />
       </section>
+
+      {pendingProfileKey && (
+        <SwitchProfileConfirmModal
+          targetProfileName={pendingProfileName}
+          busy={profileSaving}
+          error={profileSwitchError}
+          onClose={cancelPendingProfileSwitch}
+          onConfirm={confirmPendingProfileSwitch}
+        />
+      )}
     </main>
   );
 }

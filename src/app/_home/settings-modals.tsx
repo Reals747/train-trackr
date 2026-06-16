@@ -2,8 +2,94 @@
 
 import { useEffect, useState } from "react";
 import { roleLabel, type RoleName } from "@/lib/permissions";
+import { DigitCodeInput } from "./DigitCodeInput";
 import { WarningTriangleIcon } from "./icons";
 import type { DashboardRow, DataProfile, StoreCodeKickScope } from "./types";
+
+export function SwitchProfileConfirmModal({
+  targetProfileName,
+  busy,
+  error,
+  onClose,
+  onConfirm,
+}: {
+  targetProfileName: string;
+  busy: boolean;
+  error: string;
+  onClose: () => void;
+  onConfirm: (storeCode: string) => void | Promise<void>;
+}) {
+  const [storeCodeSlots, setStoreCodeSlots] = useState<string[]>(() =>
+    Array.from({ length: 8 }, () => ""),
+  );
+
+  useEffect(() => {
+    setStoreCodeSlots(Array.from({ length: 8 }, () => ""));
+  }, [targetProfileName]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !busy) onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose, busy]);
+
+  const storeCode = storeCodeSlots.join("");
+  const codeComplete = /^\d{8}$/.test(storeCode);
+
+  return (
+    <div
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="switch-profile-dialog-title"
+      onMouseDown={(e) => {
+        if (busy) return;
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div
+        className="w-full max-w-md rounded-xl border bg-card p-5 shadow-xl"
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        <h3 id="switch-profile-dialog-title" className="mb-2 text-lg font-semibold">
+          Switch profile?
+        </h3>
+        <p className="mb-4 text-sm text-foreground">
+          Enter your store code to switch to{" "}
+          <strong className="font-semibold">{targetProfileName}</strong>.
+        </p>
+        <DigitCodeInput
+          slots={storeCodeSlots}
+          onSlotsChange={setStoreCodeSlots}
+          label="Store code"
+          helper="Enter the 8-digit code for this store."
+          idPrefix="switch-profile-store-code"
+        />
+        {error && <p className="mb-3 text-sm text-rose-600">{error}</p>}
+        <div className="flex flex-wrap justify-end gap-2">
+          <button
+            type="button"
+            className="rounded-lg border px-4 py-2 text-sm font-medium"
+            disabled={busy}
+            onClick={onClose}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            className="btn-accent rounded-lg px-4 py-2 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-40"
+            disabled={!codeComplete || busy}
+            onClick={() => void onConfirm(storeCode)}
+          >
+            {busy ? "Switching…" : "Confirm"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export function TrainerInviteModal({
   storeCode,
