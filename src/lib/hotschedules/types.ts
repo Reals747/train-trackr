@@ -1,48 +1,30 @@
-/** HotSchedules SOAP types (ScheduleService / EmpService v3). */
+/** Fourth Schedules REST API types (see developer.fourth.com Schedules API guide). */
 
-export type HsSimpleDate = {
-  day: number;
-  month: number;
-  year: number;
+export type FourthShift = {
+  locationTnAId: string;
+  fourthAccountId: string;
+  workDate: string;
+  startDateTime: string;
+  endDateTime: string;
+  breakMinutes: number;
+  roleName: string;
+  locationName: string;
+  departmentName: string;
 };
 
-export type HsSimpleTime = {
-  hours: number;
-  minutes: number;
-  seconds?: number;
-  militaryTime: boolean;
-  amPm?: string;
-};
-
-export type HsScheduleItem3 = {
-  empHSId: number;
-  empPosId: number;
-  jobHsId: number;
-  jobPosId: number;
-  scheduleId: number;
-  locationId: number;
-  regMinutes: number;
-  inDate?: HsSimpleDate;
-  inTime?: HsSimpleTime;
-  outDate?: HsSimpleDate;
-  outTime?: HsSimpleTime;
-};
-
-export type HsEmployee = {
-  hsId: number;
-  empNum: number;
-  firstName: string;
-  lastName: string;
-};
-
-export type HotschedulesCredentials = {
+export type FourthSchedulesCredentials = {
+  apiRootUrl: string;
   username: string;
   password: string;
-  concept: number;
-  storeNum: number;
 };
 
-export type HotschedulesConfigResult =
+export type FourthSchedulesConfigResult =
   | { mode: "disabled" }
   | { mode: "misconfigured"; missing: string[] }
-  | { mode: "ready"; credentials: HotschedulesCredentials };
+  | { mode: "ready"; credentials: FourthSchedulesCredentials };
+
+/** @deprecated Use FourthSchedulesConfigResult */
+export type HotschedulesConfigResult = FourthSchedulesConfigResult;
+
+/** @deprecated Use FourthSchedulesCredentials */
+export type HotschedulesCredentials = FourthSchedulesCredentials;

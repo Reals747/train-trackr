@@ -1,106 +1,83 @@
-import type { HsEmployee, HsScheduleItem3, HsSimpleTime } from "@/lib/hotschedules/types";
+import type { FourthShift } from "@/lib/hotschedules/types";
 import {
   computeShiftBreakSlots,
   formatScheduleHour,
   formatShiftDuration,
-  formatShiftTimeFrame,
   type ScheduleEmployee,
 } from "@/lib/schedule";
 
-function hsTimeToHour24(time: HsSimpleTime): number {
-  if (time.militaryTime) {
-    return time.hours + time.minutes / 60;
+/**
+ * Fourth returns UTC timestamps like `2019-12-29T09:30:00:0000` (colon before fractional seconds).
+ * Normalize to a parseable ISO string, then display in the store's local timezone.
+ */
+export function parseFourthDateTime(value: string): Date {
+  const normalized = value
+    .trim()
+    .replace(/(\d{2}):(\d{4})$/, ".$2")
+    .replace(/:(\d{3})$/, ".$1");
+  const utc = normalized.endsWith("Z") ? normalized : `${normalized}Z`;
+  const date = new Date(utc);
+  if (Number.isNaN(date.getTime())) {
+    throw new Error(`Invalid Fourth datetime: ${value}`);
   }
-  const normalized = time.amPm?.toUpperCase() === "PM";
-  let hour = time.hours % 12;
-  if (normalized) hour += 12;
-  return hour + time.minutes / 60;
+  return date;
 }
 
-function shiftDurationHours(shift: HsScheduleItem3): number {
-  if (shift.regMinutes > 0) {
-    return shift.regMinutes / 60;
-  }
-  if (shift.inDate && shift.inTime && shift.outDate && shift.outTime) {
-    const start = new Date(
-      shift.inDate.year,
-      shift.inDate.month - 1,
-      shift.inDate.day,
-      ...timeParts(shift.inTime),
-    );
-    const end = new Date(
-      shift.outDate.year,
-      shift.outDate.month - 1,
-      shift.outDate.day,
-      ...timeParts(shift.outTime),
-    );
-    const minutes = (end.getTime() - start.getTime()) / 60_000;
-    if (minutes > 0) return minutes / 60;
-  }
-  return 0;
+function shiftDurationHours(shift: FourthShift): number {
+  const start = parseFourthDateTime(shift.startDateTime);
+  const end = parseFourthDateTime(shift.endDateTime);
+  const hours = (end.getTime() - start.getTime()) / 3_600_000;
+  return hours > 0 ? hours : 0;
 }
 
-function timeParts(time: HsSimpleTime): [number, number, number] {
-  if (time.militaryTime) {
-    return [time.hours, time.minutes, time.seconds ?? 0];
+function shiftTimeFrame(shift: FourthShift): string {
+  const start = parseFourthDateTime(shift.startDateTime);
+  const end = parseFourthDateTime(shift.endDateTime);
+  const startHour = start.getHours() + start.getMinutes() / 60;
+  const endHour = end.getHours() + end.getMinutes() / 60;
+  if (endHour > startHour) {
+    return `${formatScheduleHour(startHour)} - ${formatScheduleHour(endHour)}`;
   }
-  const isPm = time.amPm?.toUpperCase() === "PM";
-  let hour = time.hours % 12;
-  if (isPm) hour += 12;
-  return [hour, time.minutes, time.seconds ?? 0];
+  return `${formatScheduleHour(startHour)} - ${formatScheduleHour(endHour)}`;
 }
 
-function shiftTimeFrame(shift: HsScheduleItem3, durationHours: number): string {
-  if (shift.inDate && shift.inTime && shift.outDate && shift.outTime) {
-    const start = hsTimeToHour24(shift.inTime);
-    const end = hsTimeToHour24(shift.outTime);
-    if (shift.inDate.day === shift.outDate.day && end > start) {
-      return `${formatScheduleHour(start)} - ${formatScheduleHour(end)}`;
-    }
-  }
-
-  if (shift.inDate && shift.inTime && durationHours > 0) {
-    const start = hsTimeToHour24(shift.inTime);
-    return formatShiftTimeFrame(start, durationHours);
-  }
-
-  return "—";
+function shiftLabel(shift: FourthShift): string {
+  const role = shift.roleName?.trim();
+  if (role) return role;
+  return `Employee ${shift.fourthAccountId.slice(-6)}`;
 }
 
-function employeeName(shift: HsScheduleItem3, employeesByHsId: Map<number, HsEmployee>): string {
-  const employee = employeesByHsId.get(shift.empHSId);
-  if (employee) {
-    const full = `${employee.firstName} ${employee.lastName}`.trim();
-    if (full) return full;
+function shiftNotes(shift: FourthShift): string {
+  const parts = [shift.departmentName, shift.locationName].map((part) => part?.trim()).filter(Boolean);
+  if (shift.breakMinutes > 0) {
+    parts.push(`${shift.breakMinutes}m break scheduled`);
   }
-  if (shift.empPosId > 0) return `Employee #${shift.empPosId}`;
-  return `Employee ${shift.empHSId}`;
+  return parts.join(" · ");
 }
 
-function shiftId(shift: HsScheduleItem3): string {
-  return `hs-${shift.empHSId}-${shift.scheduleId}-${shift.jobHsId}-${shift.inDate?.day ?? 0}`;
+function shiftId(shift: FourthShift): string {
+  return `fourth-${shift.fourthAccountId}-${shift.startDateTime}`;
 }
 
-export function mapHotschedulesShiftsToScheduleEmployees(
-  shifts: HsScheduleItem3[],
-  employees: HsEmployee[],
-): ScheduleEmployee[] {
-  const employeesByHsId = new Map(employees.map((employee) => [employee.hsId, employee]));
-
+/**
+ * Map Fourth `/shifts` rows to Train Trackr schedule employees.
+ * Employee display names are not in the Schedules API; UK Employee API can enrich later via `fourthAccountId`.
+ */
+export function mapFourthShiftsToScheduleEmployees(shifts: FourthShift[]): ScheduleEmployee[] {
   return shifts.map((shift) => {
     const durationHours = shiftDurationHours(shift);
-    const durationLabel =
-      durationHours > 0 ? formatShiftDuration(durationHours) : "—";
-    const timeFrame = shiftTimeFrame(shift, durationHours);
     const breakSlots = durationHours > 0 ? computeShiftBreakSlots(durationHours) : {};
 
     return {
       id: shiftId(shift),
-      name: employeeName(shift, employeesByHsId),
-      shiftTimeFrame: timeFrame,
-      shiftDuration: durationLabel,
-      shiftNotes: shift.scheduleId > 0 ? `Schedule ${shift.scheduleId}` : "",
+      name: shiftLabel(shift),
+      shiftTimeFrame: shiftTimeFrame(shift),
+      shiftDuration: durationHours > 0 ? formatShiftDuration(durationHours) : "—",
+      shiftNotes: shiftNotes(shift),
       ...breakSlots,
     };
   });
 }
+
+/** @deprecated Use mapFourthShiftsToScheduleEmployees */
+export const mapHotschedulesShiftsToScheduleEmployees = mapFourthShiftsToScheduleEmployees;

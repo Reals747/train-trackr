@@ -1,14 +1,16 @@
 # HotSchedules (Fourth) integration docs
 
-Drop publicly available HotSchedules / Fourth API documentation here (PDF, Markdown, HTML export, etc.).
+Documentation for integrating Train Trackr's Schedule tab with **Fourth Workforce Management** (HotSchedules).
 
-**Start here:** [`ARCHITECTURE.md`](./ARCHITECTURE.md) — integration plan, mapping to Train Trackr stores/profiles, and implementation phases.
+**Start here:** [`ARCHITECTURE.md`](./ARCHITECTURE.md) — integration plan, REST API mapping, and implementation phases.
+
+**Live API reference:** [Fourth Schedules API Guide](https://developer.fourth.com/en-gb/docs/schedules-api/guide)
 
 ## What to add
 
-- Official integration guides for third-party websites
-- API reference (auth, endpoints, request/response examples)
-- Location / store ID mapping notes
+- Official Fourth integration guides (Schedules, UK Employee, etc.)
+- API reference notes (auth, endpoints, request/response examples)
+- Location / department mapping notes for Train Trackr profiles
 - Any public diagrams or onboarding checklists from Fourth
 
 ## What not to add
@@ -17,11 +19,16 @@ Drop publicly available HotSchedules / Fourth API documentation here (PDF, Markd
 - Production credentials or `.env` values
 - Customer or employee PII from live systems
 
+## Legacy
+
+- [`SOAP+Web+Services+API+Documentation.pdf`](./SOAP+Web+Services+API+Documentation.pdf) — superseded by the REST Schedules API; kept for historical reference only.
+
 ## Related code
 
-When implementing the live schedule feed, start from:
+When implementing or debugging the live schedule feed, start from:
 
 - `src/lib/schedule-server.ts` — server boundary (`loadScheduleDay`)
+- `src/lib/hotschedules/` — Fourth REST client, config, mapper
 - `src/app/api/schedule/route.ts` — authenticated API route
 - `src/lib/schedule.ts` — shared types and break rules
 - `src/components/ScheduleDayList.tsx` — schedule UI

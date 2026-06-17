@@ -1,56 +1,60 @@
 import {
+  FOURTH_SCHEDULES_ENV_ENABLED,
+  FOURTH_SCHEDULES_ENV_KEYS,
   HOTSCHEDULES_ENV_ENABLED,
-  HOTSCHEDULES_ENV_KEYS,
 } from "@/lib/hotschedules/constants";
-import type { HotschedulesConfigResult, HotschedulesCredentials } from "@/lib/hotschedules/types";
+import type { FourthSchedulesConfigResult, FourthSchedulesCredentials } from "@/lib/hotschedules/types";
 
-const ENV_USERNAME = HOTSCHEDULES_ENV_KEYS[0];
-const ENV_PASSWORD = HOTSCHEDULES_ENV_KEYS[1];
-const ENV_CONCEPT = HOTSCHEDULES_ENV_KEYS[2];
-const ENV_STORE_NUM = HOTSCHEDULES_ENV_KEYS[3];
+const ENV_API_ROOT = FOURTH_SCHEDULES_ENV_KEYS[0];
+const ENV_USERNAME = FOURTH_SCHEDULES_ENV_KEYS[1];
+const ENV_PASSWORD = FOURTH_SCHEDULES_ENV_KEYS[2];
 
-/** Env var names required when HotSchedules integration is enabled. */
-export { HOTSCHEDULES_ENV_KEYS };
+/** Env var names required when Fourth Schedules integration is enabled. */
+export { FOURTH_SCHEDULES_ENV_KEYS, FOURTH_SCHEDULES_ENV_KEYS as HOTSCHEDULES_ENV_KEYS };
 
 function isEnabledFlag(value: string | undefined): boolean {
   return value?.trim().toLowerCase() === "true" || value?.trim() === "1";
 }
 
-function readCredentials(): { credentials: HotschedulesCredentials | null; missing: string[] } {
-  const missing: string[] = [];
-  const username = process.env[ENV_USERNAME]?.trim() ?? "";
-  const password = process.env[ENV_PASSWORD]?.trim() ?? "";
-  const conceptRaw = process.env[ENV_CONCEPT]?.trim() ?? "";
-  const storeNumRaw = process.env[ENV_STORE_NUM]?.trim() ?? "";
+function readEnv(primary: string, legacy?: string): string {
+  const primaryValue = process.env[primary]?.trim();
+  if (primaryValue) return primaryValue;
+  if (legacy) return process.env[legacy]?.trim() ?? "";
+  return "";
+}
 
+function readCredentials(): { credentials: FourthSchedulesCredentials | null; missing: string[] } {
+  const missing: string[] = [];
+  const apiRootUrl = readEnv(ENV_API_ROOT);
+  const username = readEnv(ENV_USERNAME, "HOTSCHEDULES_USERNAME");
+  const password = readEnv(ENV_PASSWORD, "HOTSCHEDULES_PASSWORD");
+
+  if (!apiRootUrl) missing.push(ENV_API_ROOT);
   if (!username) missing.push(ENV_USERNAME);
   if (!password) missing.push(ENV_PASSWORD);
-  if (!conceptRaw) missing.push(ENV_CONCEPT);
-  if (!storeNumRaw) missing.push(ENV_STORE_NUM);
-
-  const concept = Number(conceptRaw);
-  const storeNum = Number(storeNumRaw);
-  if (conceptRaw && !Number.isInteger(concept)) missing.push(`${ENV_CONCEPT} (must be an integer)`);
-  if (storeNumRaw && !Number.isInteger(storeNum)) missing.push(`${ENV_STORE_NUM} (must be an integer)`);
 
   if (missing.length > 0) {
     return { credentials: null, missing };
   }
 
   return {
-    credentials: { username, password, concept, storeNum },
+    credentials: { apiRootUrl, username, password },
     missing: [],
   };
 }
 
 /**
- * Resolve whether HotSchedules should be used for this deployment.
- * - `HOTSCHEDULES_ENABLED` not true → mock schedule data
- * - enabled but missing/invalid env → misconfigured (UI shows errors)
- * - enabled with full env → ready for SOAP calls
+ * Resolve whether Fourth Schedules API should be used.
+ * - `FOURTH_SCHEDULES_ENABLED` (or legacy `HOTSCHEDULES_ENABLED`) not true → mock data
+ * - enabled but missing env → misconfigured (UI shows errors)
+ * - enabled with full env → ready for REST calls
  */
-export function resolveHotschedulesConfig(): HotschedulesConfigResult {
-  if (!isEnabledFlag(process.env[HOTSCHEDULES_ENV_ENABLED])) {
+export function resolveFourthSchedulesConfig(): FourthSchedulesConfigResult {
+  const enabled =
+    isEnabledFlag(process.env[FOURTH_SCHEDULES_ENV_ENABLED]) ||
+    isEnabledFlag(process.env[HOTSCHEDULES_ENV_ENABLED]);
+
+  if (!enabled) {
     return { mode: "disabled" };
   }
 
@@ -62,10 +66,15 @@ export function resolveHotschedulesConfig(): HotschedulesConfigResult {
   return { mode: "ready", credentials };
 }
 
-/** User-facing labels for missing configuration fields. */
-export function hotschedulesConfigErrorMessage(missing: string[]): string {
+/** @deprecated Use resolveFourthSchedulesConfig */
+export const resolveHotschedulesConfig = resolveFourthSchedulesConfig;
+
+export function fourthSchedulesConfigErrorMessage(missing: string[]): string {
   if (missing.length === 0) {
-    return "HotSchedules is enabled but not fully configured.";
+    return "Fourth Schedules API is enabled but not fully configured.";
   }
-  return `HotSchedules is enabled but missing configuration: ${missing.join(", ")}.`;
+  return `Fourth Schedules API is enabled but missing configuration: ${missing.join(", ")}.`;
 }
+
+/** @deprecated Use fourthSchedulesConfigErrorMessage */
+export const hotschedulesConfigErrorMessage = fourthSchedulesConfigErrorMessage;

@@ -1,13 +1,10 @@
 import type { ActiveProfile } from "@/lib/profile";
+import { fetchFourthSchedulesShiftsForDay } from "@/lib/hotschedules/client";
 import {
-  hotschedulesConfigErrorMessage,
-  resolveHotschedulesConfig,
+  fourthSchedulesConfigErrorMessage,
+  resolveFourthSchedulesConfig,
 } from "@/lib/hotschedules/config";
-import {
-  fetchHotschedulesShiftsForDay,
-  fetchHotschedulesStoreEmployees,
-} from "@/lib/hotschedules/client";
-import { mapHotschedulesShiftsToScheduleEmployees } from "@/lib/hotschedules/mapper";
+import { mapFourthShiftsToScheduleEmployees } from "@/lib/hotschedules/mapper";
 import { mockScheduleEmployees } from "@/lib/schedule-mock";
 import {
   formatScheduleDayLabel,
@@ -30,7 +27,7 @@ function basePayload(
 
 /**
  * Load employees scheduled for a profile on a calendar day.
- * Uses HotSchedules when `HOTSCHEDULES_ENABLED=true` and env is complete; otherwise mock data.
+ * Uses Fourth Schedules API when enabled and configured; otherwise mock data.
  */
 export async function loadScheduleDay(
   _storeId: string,
@@ -43,7 +40,7 @@ export async function loadScheduleDay(
   const dayLabel = formatScheduleDayLabel(date);
   const base = basePayload(profileKey, normalizedDate, dayLabel);
 
-  const config = resolveHotschedulesConfig();
+  const config = resolveFourthSchedulesConfig();
 
   if (config.mode === "disabled") {
     return {
@@ -62,26 +59,23 @@ export async function loadScheduleDay(
       integration: {
         state: "config_error",
         missing: config.missing,
-        message: hotschedulesConfigErrorMessage(config.missing),
+        message: fourthSchedulesConfigErrorMessage(config.missing),
       },
     };
   }
 
   try {
-    const [shifts, employees] = await Promise.all([
-      fetchHotschedulesShiftsForDay(config.credentials, normalizedDate),
-      fetchHotschedulesStoreEmployees(config.credentials),
-    ]);
+    const shifts = await fetchFourthSchedulesShiftsForDay(config.credentials, normalizedDate);
 
     return {
       ...base,
-      employees: mapHotschedulesShiftsToScheduleEmployees(shifts, employees),
+      employees: mapFourthShiftsToScheduleEmployees(shifts),
       source: "hotschedules",
       integration: { state: "hotschedules" },
     };
   } catch (error) {
     const message =
-      error instanceof Error ? error.message : "Could not load schedule from HotSchedules.";
+      error instanceof Error ? error.message : "Could not load schedule from Fourth Schedules API.";
     return {
       ...base,
       employees: [],

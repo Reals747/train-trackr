@@ -68,7 +68,7 @@ export type ScheduleDayPayload = {
   date: string;
   dayLabel: string;
   employees: ScheduleEmployee[];
-  /** Where the roster came from; `hotschedules` when live SOAP sync succeeds. */
+  /** Where the roster came from; `hotschedules` when live Fourth Schedules API sync succeeds. */
   source: "mock" | "hotschedules";
   /** Integration state for UI messaging (config errors, API failures, mock fallback). */
   integration: ScheduleIntegrationInfo;

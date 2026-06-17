@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { clientApi } from "@/lib/client-api";
-import { HOTSCHEDULES_ENV_KEYS } from "@/lib/hotschedules/constants";
+import { FOURTH_SCHEDULES_ENV_KEYS } from "@/lib/hotschedules/constants";
 import {
   mergeScheduleBreakState,
   readScheduleBreakState,
@@ -47,7 +47,7 @@ function ScheduleIntegrationNotice({ integration }: { integration: ScheduleInteg
         role="alert"
         className="rounded-lg border border-amber-300/90 bg-amber-100 px-4 py-3 text-sm text-amber-950 dark:border-amber-500/50 dark:bg-amber-900/40 dark:text-amber-100"
       >
-        <p className="font-semibold">HotSchedules is not configured</p>
+        <p className="font-semibold">Fourth Schedules API is not configured</p>
         <p className="mt-1 opacity-90">{integration.message}</p>
         <ul className="mt-2 list-inside list-disc text-xs opacity-90">
           {integration.missing.map((key) => (
@@ -57,8 +57,8 @@ function ScheduleIntegrationNotice({ integration }: { integration: ScheduleInteg
           ))}
         </ul>
         <p className="mt-2 text-xs opacity-80">
-          Set <code className="font-mono">HOTSCHEDULES_ENABLED=true</code> and fill in{" "}
-          {HOTSCHEDULES_ENV_KEYS.join(", ")} in your server environment (e.g. Vercel or{" "}
+          Set <code className="font-mono">FOURTH_SCHEDULES_ENABLED=true</code> and fill in{" "}
+          {FOURTH_SCHEDULES_ENV_KEYS.join(", ")} in your server environment (e.g. Vercel or{" "}
           <code className="font-mono">.env.local</code>). See{" "}
           <code className="font-mono">.env.example</code> and{" "}
           <code className="font-mono">docs/integrations/hotschedules/ARCHITECTURE.md</code>.
@@ -72,7 +72,7 @@ function ScheduleIntegrationNotice({ integration }: { integration: ScheduleInteg
       role="alert"
       className="rounded-lg border border-rose-300/90 bg-rose-100 px-4 py-3 text-sm text-rose-950 dark:border-rose-500/50 dark:bg-rose-950/40 dark:text-rose-100"
     >
-      <p className="font-semibold">Could not load schedule from HotSchedules</p>
+      <p className="font-semibold">Could not load schedule from Fourth Schedules API</p>
       <p className="mt-1 opacity-90">{integration.message}</p>
     </div>
   );
