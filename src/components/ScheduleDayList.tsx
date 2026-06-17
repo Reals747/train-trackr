@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { clientApi } from "@/lib/client-api";
+import { HOTSCHEDULES_ENV_KEYS } from "@/lib/hotschedules/constants";
 import {
   mergeScheduleBreakState,
   readScheduleBreakState,
@@ -12,6 +13,7 @@ import {
   toDateKey,
   type ScheduleDayPayload,
   type ScheduleEmployee,
+  type ScheduleIntegrationInfo,
 } from "@/lib/schedule";
 import { MOCK_SCHEDULE_PROFILE_NAME } from "@/lib/schedule";
 
@@ -32,6 +34,48 @@ function applyStoredBreaks(
     ...employee,
     ...mergeScheduleBreakState(profile, dateKey, employee),
   }));
+}
+
+function ScheduleIntegrationNotice({ integration }: { integration: ScheduleIntegrationInfo }) {
+  if (integration.state === "mock" || integration.state === "hotschedules") {
+    return null;
+  }
+
+  if (integration.state === "config_error") {
+    return (
+      <div
+        role="alert"
+        className="rounded-lg border border-amber-300/90 bg-amber-100 px-4 py-3 text-sm text-amber-950 dark:border-amber-500/50 dark:bg-amber-900/40 dark:text-amber-100"
+      >
+        <p className="font-semibold">HotSchedules is not configured</p>
+        <p className="mt-1 opacity-90">{integration.message}</p>
+        <ul className="mt-2 list-inside list-disc text-xs opacity-90">
+          {integration.missing.map((key) => (
+            <li key={key}>
+              <code className="font-mono">{key}</code>
+            </li>
+          ))}
+        </ul>
+        <p className="mt-2 text-xs opacity-80">
+          Set <code className="font-mono">HOTSCHEDULES_ENABLED=true</code> and fill in{" "}
+          {HOTSCHEDULES_ENV_KEYS.join(", ")} in your server environment (e.g. Vercel or{" "}
+          <code className="font-mono">.env.local</code>). See{" "}
+          <code className="font-mono">.env.example</code> and{" "}
+          <code className="font-mono">docs/integrations/hotschedules/ARCHITECTURE.md</code>.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      role="alert"
+      className="rounded-lg border border-rose-300/90 bg-rose-100 px-4 py-3 text-sm text-rose-950 dark:border-rose-500/50 dark:bg-rose-950/40 dark:text-rose-100"
+    >
+      <p className="font-semibold">Could not load schedule from HotSchedules</p>
+      <p className="mt-1 opacity-90">{integration.message}</p>
+    </div>
+  );
 }
 
 function ScheduleBreakCell({
@@ -103,6 +147,7 @@ export function ScheduleDayList({ activeProfile = "FOH", canToggleBreaks = true 
   const [todayDateKey, setTodayDateKey] = useState<string | null>(null);
   const [schedule, setSchedule] = useState<ScheduleDayPayload | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     setTodayDateKey(toDateKey(new Date()));
@@ -111,6 +156,7 @@ export function ScheduleDayList({ activeProfile = "FOH", canToggleBreaks = true 
   const load = useCallback(async () => {
     if (!todayDateKey) return;
     setLoading(true);
+    setLoadError(null);
     try {
       const data = await clientApi<ScheduleDayPayload>(
         `/api/schedule?profile=${encodeURIComponent(activeProfile)}&date=${encodeURIComponent(todayDateKey)}`,
@@ -119,8 +165,9 @@ export function ScheduleDayList({ activeProfile = "FOH", canToggleBreaks = true 
         ...data,
         employees: applyStoredBreaks(activeProfile, todayDateKey, data.employees),
       });
-    } catch {
+    } catch (error) {
       setSchedule(null);
+      setLoadError(error instanceof Error ? error.message : "Could not load schedule.");
     } finally {
       setLoading(false);
     }
@@ -168,24 +215,40 @@ export function ScheduleDayList({ activeProfile = "FOH", canToggleBreaks = true 
     return <p className="text-sm opacity-70">Loading schedule…</p>;
   }
 
+  const integration = schedule?.integration;
+  const showIntegrationError =
+    integration?.state === "config_error" || integration?.state === "api_error";
+
   return (
     <div className="space-y-4">
       <p className="text-sm font-medium opacity-80">
         <span className="font-semibold text-foreground">{schedule?.dayLabel ?? "—"}</span>
       </p>
 
+      {integration ? <ScheduleIntegrationNotice integration={integration} /> : null}
+
+      {loadError ? (
+        <div
+          role="alert"
+          className="rounded-lg border border-rose-300/90 bg-rose-100 px-4 py-3 text-sm text-rose-950 dark:border-rose-500/50 dark:bg-rose-950/40 dark:text-rose-100"
+        >
+          <p className="font-semibold">Schedule request failed</p>
+          <p className="mt-1 opacity-90">{loadError}</p>
+        </div>
+      ) : null}
+
       {loading ? (
         <p className="text-sm opacity-70">Loading employees…</p>
-      ) : !schedule || schedule.employees.length === 0 ? (
+      ) : showIntegrationError ? null : !schedule || schedule.employees.length === 0 ? (
         <p className="rounded-lg bg-slate-100 p-4 text-center text-sm opacity-80 dark:bg-slate-700">
-          No employees scheduled for this day. Schedule data is not set up for this profile yet
-          {schedule?.source === "mock" ? (
+          No employees scheduled for this day.
+          {schedule?.integration.state === "mock" ? (
             <>
               {" "}
-              (mock roster is available for <strong className="font-semibold">{MOCK_SCHEDULE_PROFILE_NAME}</strong>)
+              Mock roster is available for{" "}
+              <strong className="font-semibold">{MOCK_SCHEDULE_PROFILE_NAME}</strong>.
             </>
           ) : null}
-          .
         </p>
       ) : (
         <div className="overflow-x-auto">

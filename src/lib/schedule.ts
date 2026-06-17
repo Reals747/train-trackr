@@ -68,9 +68,17 @@ export type ScheduleDayPayload = {
   date: string;
   dayLabel: string;
   employees: ScheduleEmployee[];
-  /** Where the roster came from; `hotschedules` once Fourth API is wired up. */
+  /** Where the roster came from; `hotschedules` when live SOAP sync succeeds. */
   source: "mock" | "hotschedules";
+  /** Integration state for UI messaging (config errors, API failures, mock fallback). */
+  integration: ScheduleIntegrationInfo;
 };
+
+export type ScheduleIntegrationInfo =
+  | { state: "mock" }
+  | { state: "hotschedules" }
+  | { state: "config_error"; missing: string[]; message: string }
+  | { state: "api_error"; message: string };
 
 /** Profile display name used for default mock roster seed data. */
 export const MOCK_SCHEDULE_PROFILE_NAME = "FOH Manchester Crenshaw";

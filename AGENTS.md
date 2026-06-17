@@ -30,3 +30,15 @@ When asking about the version, include the current `package.json` version, that 
 - **Custom version** — use whatever semver string the user specifies.
 
 Only update `package.json` (or related version config) after the user confirms. If they ask you to commit and push in the same request, provide the change summary and resolve the version question first, then commit and push.
+
+## HotSchedules (Fourth) schedule integration
+
+Public HotSchedules / Fourth API documentation lives in **`docs/integrations/hotschedules/`**. Before designing or implementing schedule sync, auth, or mapping:
+
+1. **Read the files in that folder** — start with **`docs/integrations/hotschedules/ARCHITECTURE.md`**, then the PDF; treat them as the source of truth over generic HotSchedules knowledge.
+2. **Do not commit secrets** — API keys and tokens stay in environment variables only.
+3. **Keep the integration boundary** — external API calls belong in `src/lib/schedule-server.ts` (or new server-only modules it imports). The route `src/app/api/schedule/route.ts` stays thin; UI types stay in `src/lib/schedule.ts`.
+4. **Preserve existing behavior during rollout** — mock data in `src/lib/schedule-mock.ts` can remain until live sync is verified; prefer feature flags or gradual profile-by-profile enablement when connecting production stores.
+5. **Map Fourth concepts to Train Trackr** — document how HotSchedules location/store IDs align with `StoreProfile` keys (`profileKey`) per store; breaks and shift display should still flow through `computeShiftBreakSlots()` unless the API exposes break data that should override rules.
+
+If the folder is empty, ask the user to add the public doc before guessing endpoint or auth details.
