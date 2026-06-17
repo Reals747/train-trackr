@@ -28,16 +28,16 @@ export function ExpandableHeaderButton({
       aria-label={label}
       aria-pressed={active}
       onClick={onClick}
-      className={`group inline-flex h-12 items-center overflow-hidden rounded-lg text-sm font-medium transition-colors ${EXPAND_MS} ${EXPAND_EASE} ${
+      className={`group inline-flex h-12 shrink-0 items-center overflow-hidden rounded-lg text-sm font-medium transition-colors ${EXPAND_MS} ${EXPAND_EASE} ${
         active ? activeClassName : inactiveClassName
       }`}
     >
       <span
-        className={`grid ${EXPAND_MS} ${EXPAND_EASE} transition-[grid-template-columns] [grid-template-columns:0fr] group-hover:[grid-template-columns:1fr] group-aria-pressed:[grid-template-columns:1fr]`}
+        className={`grid ${EXPAND_MS} ${EXPAND_EASE} transition-[grid-template-columns] [grid-template-columns:0fr] md:group-hover:[grid-template-columns:1fr] md:group-aria-pressed:[grid-template-columns:1fr]`}
       >
         <span className="min-w-0 overflow-hidden">
           <span
-            className={`block whitespace-nowrap pl-3 pr-1 opacity-0 transition-opacity ${EXPAND_MS} ${EXPAND_EASE} group-hover:opacity-100 group-aria-pressed:opacity-100`}
+            className={`block whitespace-nowrap pl-3 pr-1 opacity-0 transition-opacity ${EXPAND_MS} ${EXPAND_EASE} md:group-hover:opacity-100 md:group-aria-pressed:opacity-100`}
           >
             {label}
           </span>

@@ -335,12 +335,12 @@ export default function Home() {
   return (
     <main className={`mx-auto flex min-h-screen w-full max-w-5xl flex-col ${appearance.compactCards ? "gap-2 p-2 sm:p-4" : "gap-4 p-3 sm:p-6"}`}>
       <header className="rounded-xl bg-card p-4 shadow-sm">
-        <div className="flex items-center justify-between gap-3">
-          <div>
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between md:gap-3">
+          <div className="min-w-0 md:flex-1">
             <h1 className="text-2xl font-bold">Train Trackr</h1>
-            <p className="text-sm opacity-75">{user.storeName} - {user.name} ({user.role})</p>
+            <p className="text-sm opacity-75 md:truncate">{user.storeName} - {user.name} ({user.role})</p>
           </div>
-          <div className="flex flex-wrap items-center justify-end gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-2 md:shrink-0">
             <ProfileToggle
               value={activeProfile}
               onChange={requestProfileSwitch}

@@ -94,20 +94,21 @@ export function ProfileToggle({ value, onChange, profiles, disabled }: Props) {
   }
 
   return (
-    <div ref={rootRef} className="relative">
+    <div ref={rootRef} className="relative min-w-0">
       <button
         type="button"
         disabled={isDisabled}
-        aria-label="Active profile filter"
+        aria-label={active ? `Active profile: ${active.name}` : "Active profile filter"}
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-controls={listboxId}
+        title={active?.name}
         onClick={() => {
           if (!isDisabled) setOpen((current) => !current);
         }}
-        className={`inline-flex min-h-9 items-center gap-1.5 rounded-full border px-4 py-2 text-sm font-semibold transition-opacity disabled:cursor-not-allowed disabled:opacity-50 ${triggerClasses}`}
+        className={`inline-flex min-h-9 min-w-0 max-w-full items-center gap-1.5 rounded-full border px-4 py-2 text-sm font-semibold transition-opacity disabled:cursor-not-allowed disabled:opacity-50 ${triggerClasses}`}
       >
-        <span className="whitespace-nowrap">{active?.name ?? "Profile"}</span>
+        <span className="truncate">{active?.name ?? "Profile"}</span>
         <ChevronDisclosureIcon expanded={open} className="h-4 w-4 shrink-0 opacity-70" />
       </button>
 
