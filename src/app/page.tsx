@@ -20,6 +20,7 @@ import { withProfileQuery } from "./_home/profile-query";
 import { SettingsPanel } from "./_home/SettingsPanel";
 import { TraineeDashboardModal } from "./_home/TraineeDashboardModal";
 import { UnderDevelopmentNotice } from "./_home/UnderDevelopmentNotice";
+import { ScheduleDayList } from "@/components/ScheduleDayList";
 import type {
   AccountDetails,
   ActivityLog,
@@ -516,8 +517,11 @@ export default function Home() {
 
       {tab === "schedule" && (
         <section className="rounded-xl bg-card p-4 shadow-sm">
+          <div className="mb-4">
+            <UnderDevelopmentNotice />
+          </div>
           <h2 className="mb-3 text-lg font-semibold">Schedule</h2>
-          <UnderDevelopmentNotice />
+          <ScheduleDayList activeProfile={activeProfile} canToggleBreaks={user.role !== "VIEWER"} />
         </section>
       )}
 
