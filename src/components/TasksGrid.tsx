@@ -1,18 +1,16 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback } from "react";
 import { clientApi } from "@/lib/client-api";
 import { TASK_DAYS, type GridRow, parseTaskLines, setTaskDone } from "@/lib/tasks";
 
 /**
  * Read-only Tasks grid used inside the embedded Tasks tab. Columns are Monday–Saturday; rows are
  * the store's employees. Each cell holds one task per line, rendered with a checkbox; checking a
- * task off persists for everyone (the `/api/tasks` PATCH route). Loads on mount and polls every
- * five seconds. Managing rows, the preset bank, and weekly archives lives on the full page
- * (`TasksManager`); use the Expand button to get there.
+ * task off persists for everyone (the `/api/tasks` PATCH route). Row data is loaded by the home
+ * page `refreshCore` bundle and kept fresh via polling there. Managing rows, the preset bank, and
+ * weekly archives lives on the full page (`TasksManager`); use the Expand button to get there.
  */
-const POLL_INTERVAL_MS = 5000;
-
 export function ExpandIcon({ className }: { className?: string }) {
   return (
     <svg
@@ -37,56 +35,38 @@ type ActiveProfile = string;
 
 export function TasksGrid({
   onExpand,
-  activeProfile = "FOH",
+  rows,
+  onRowsChange,
 }: {
   onExpand?: () => void;
   activeProfile?: ActiveProfile;
+  rows: GridRow[];
+  onRowsChange: (rows: GridRow[]) => void;
 }) {
-  const [rows, setRows] = useState<GridRow[]>([]);
-
-  const load = useCallback(async () => {
-    try {
-      const data = await clientApi<{ rows: GridRow[] }>(
-        `/api/tasks?profile=${encodeURIComponent(activeProfile)}`,
-      );
-      setRows(data.rows);
-    } catch {
-      // Non-fatal; keep showing whatever we have. The API returns a clear message on setup issues.
-    }
-  }, [activeProfile]);
-
-  useEffect(() => {
-    void load();
-    const interval = setInterval(() => void load(), POLL_INTERVAL_MS);
-    return () => clearInterval(interval);
-  }, [load]);
-
-  const toggleTask = async (
-    rowId: string,
-    colIndex: number,
-    lineIndex: number,
-    done: boolean,
-  ) => {
-    const prevContent = rows.find((r) => r.id === rowId)?.cells[colIndex] ?? "";
-    const next = setTaskDone(prevContent, lineIndex, done);
-    setRows((prev) =>
-      prev.map((r) =>
-        r.id === rowId ? { ...r, cells: { ...r.cells, [colIndex]: next } } : r,
-      ),
-    );
-    try {
-      await clientApi("/api/tasks", {
-        method: "PATCH",
-        body: JSON.stringify({ rowId, colIndex, lineIndex, done }),
-      });
-    } catch {
-      setRows((prev) =>
-        prev.map((r) =>
-          r.id === rowId ? { ...r, cells: { ...r.cells, [colIndex]: prevContent } } : r,
+  const toggleTask = useCallback(
+    async (rowId: string, colIndex: number, lineIndex: number, done: boolean) => {
+      const prevContent = rows.find((r) => r.id === rowId)?.cells[colIndex] ?? "";
+      const next = setTaskDone(prevContent, lineIndex, done);
+      onRowsChange(
+        rows.map((r) =>
+          r.id === rowId ? { ...r, cells: { ...r.cells, [colIndex]: next } } : r,
         ),
       );
-    }
-  };
+      try {
+        await clientApi("/api/tasks", {
+          method: "PATCH",
+          body: JSON.stringify({ rowId, colIndex, lineIndex, done }),
+        });
+      } catch {
+        onRowsChange(
+          rows.map((r) =>
+            r.id === rowId ? { ...r, cells: { ...r.cells, [colIndex]: prevContent } } : r,
+          ),
+        );
+      }
+    },
+    [onRowsChange, rows],
+  );
 
   return (
     <div className="mt-4">

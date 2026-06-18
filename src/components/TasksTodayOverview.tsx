@@ -1,7 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import { clientApi } from "@/lib/client-api";
+import {
+  isPendingClientTaskColumn,
+  useClientTaskColumnIndex,
+} from "@/lib/use-client-today";
 import { TASK_DAYS, type GridRow, parseTaskLines, setTaskDone } from "@/lib/tasks";
 
 /**
@@ -11,64 +15,44 @@ import { TASK_DAYS, type GridRow, parseTaskLines, setTaskDone } from "@/lib/task
  * Shares the `/api/tasks` data + cell format with {@link TasksGrid}, so toggling
  * a task here persists store-wide just the same.
  */
-const POLL_INTERVAL_MS = 5000;
+type Props = {
+  activeProfile?: string;
+  rows: GridRow[];
+  onRowsChange: (rows: GridRow[]) => void;
+};
 
-/** JS `Date.getDay()` is 0=Sunday..6=Saturday; TASK_DAYS is 0=Monday..5=Saturday. */
-function weekdayToColumnIndex(jsDay: number): number {
-  return jsDay - 1;
-}
+export function TasksTodayOverview({ activeProfile = "FOH", rows, onRowsChange }: Props) {
+  const todayColIndex = useClientTaskColumnIndex();
+  const [expanded, setExpanded] = useState(false);
 
-export function TasksTodayOverview({ activeProfile = "FOH" }: { activeProfile?: string }) {
-  const [rows, setRows] = useState<GridRow[]>([]);
-  /** null until resolved on the client (avoids SSR/client hydration mismatch on the date). */
-  const [todayColIndex, setTodayColIndex] = useState<number | null>(null);
-
-  useEffect(() => {
-    setTodayColIndex(weekdayToColumnIndex(new Date().getDay()));
-  }, []);
-
-  const load = useCallback(async () => {
-    try {
-      const data = await clientApi<{ rows: GridRow[] }>(
-        `/api/tasks?profile=${encodeURIComponent(activeProfile)}`,
-      );
-      setRows(data.rows);
-    } catch {
-      // Non-fatal; keep showing whatever we have.
-    }
-  }, [activeProfile]);
-
-  useEffect(() => {
-    void load();
-    const interval = setInterval(() => void load(), POLL_INTERVAL_MS);
-    return () => clearInterval(interval);
-  }, [load]);
-
-  const toggleTask = async (rowId: string, lineIndex: number, done: boolean) => {
-    if (todayColIndex === null || todayColIndex < 0) return;
-    const colIndex = todayColIndex;
-    const prevContent = rows.find((r) => r.id === rowId)?.cells[colIndex] ?? "";
-    const next = setTaskDone(prevContent, lineIndex, done);
-    setRows((prev) =>
-      prev.map((r) =>
-        r.id === rowId ? { ...r, cells: { ...r.cells, [colIndex]: next } } : r,
-      ),
-    );
-    try {
-      await clientApi("/api/tasks", {
-        method: "PATCH",
-        body: JSON.stringify({ rowId, colIndex, lineIndex, done }),
-      });
-    } catch {
-      setRows((prev) =>
-        prev.map((r) =>
-          r.id === rowId ? { ...r, cells: { ...r.cells, [colIndex]: prevContent } } : r,
+  const toggleTask = useCallback(
+    async (rowId: string, lineIndex: number, done: boolean) => {
+      if (todayColIndex < 0) return;
+      const colIndex = todayColIndex;
+      const prevContent = rows.find((r) => r.id === rowId)?.cells[colIndex] ?? "";
+      const next = setTaskDone(prevContent, lineIndex, done);
+      onRowsChange(
+        rows.map((r) =>
+          r.id === rowId ? { ...r, cells: { ...r.cells, [colIndex]: next } } : r,
         ),
       );
-    }
-  };
+      try {
+        await clientApi("/api/tasks", {
+          method: "PATCH",
+          body: JSON.stringify({ rowId, colIndex, lineIndex, done }),
+        });
+      } catch {
+        onRowsChange(
+          rows.map((r) =>
+            r.id === rowId ? { ...r, cells: { ...r.cells, [colIndex]: prevContent } } : r,
+          ),
+        );
+      }
+    },
+    [onRowsChange, rows, todayColIndex],
+  );
 
-  if (todayColIndex === null) {
+  if (isPendingClientTaskColumn(todayColIndex)) {
     return <p className="text-sm opacity-70">Loading today&apos;s tasks…</p>;
   }
 
@@ -95,36 +79,53 @@ export function TasksTodayOverview({ activeProfile = "FOH" }: { activeProfile?: 
           No tasks for {dayName}.
         </p>
       ) : (
-        <ul className="space-y-3">
-          {todays.map(({ row, tasks }) => (
-              <li
-                key={row.id}
-                className="w-full rounded-lg bg-slate-100 p-3 text-left text-sm font-medium text-slate-900 dark:bg-slate-700 dark:text-slate-100"
-              >
-                <p className="font-semibold">{row.label || "—"}</p>
-                <ul className="mt-2 flex flex-col gap-1">
-                  {tasks.map((task, lineIndex) => (
-                    <li key={lineIndex} className="flex items-start gap-2 text-sm font-normal">
-                      <input
-                        type="checkbox"
-                        checked={task.done}
-                        onChange={(e) => toggleTask(row.id, lineIndex, e.target.checked)}
-                        aria-label={`Mark "${task.text}" ${task.done ? "not done" : "done"}`}
-                        className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer accent-slate-600 dark:accent-slate-300"
-                      />
-                      <span
-                        className={`min-w-0 break-words ${
-                          task.done ? "text-slate-400 line-through dark:text-slate-500" : ""
-                        }`}
-                      >
-                        {task.text}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              </li>
-          ))}
-        </ul>
+        <>
+          <div
+            className={
+              expanded
+                ? undefined
+                : "max-h-[22.5rem] overflow-y-auto overscroll-contain pr-1"
+            }
+          >
+            <ul className="space-y-3">
+              {todays.map(({ row, tasks }) => (
+                <li
+                  key={row.id}
+                  className="w-full rounded-lg bg-slate-100 p-3 text-left text-sm font-medium text-slate-900 dark:bg-slate-700 dark:text-slate-100"
+                >
+                  <p className="font-semibold">{row.label || "—"}</p>
+                  <ul className="mt-2 flex flex-col gap-1">
+                    {tasks.map((task, lineIndex) => (
+                      <li key={lineIndex} className="flex items-start gap-2 text-sm font-normal">
+                        <input
+                          type="checkbox"
+                          checked={task.done}
+                          onChange={(e) => toggleTask(row.id, lineIndex, e.target.checked)}
+                          aria-label={`Mark "${task.text}" ${task.done ? "not done" : "done"}`}
+                          className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer accent-slate-600 dark:accent-slate-300"
+                        />
+                        <span
+                          className={`min-w-0 break-words ${
+                            task.done ? "text-slate-400 line-through dark:text-slate-500" : ""
+                          }`}
+                        >
+                          {task.text}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </li>
+              ))}
+            </ul>
+          </div>
+          <button
+            type="button"
+            className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 focus-visible:outline focus-visible:ring-2 focus-visible:ring-slate-400 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800"
+            onClick={() => setExpanded((value) => !value)}
+          >
+            {expanded ? "Collapse" : "Expand"}
+          </button>
+        </>
       )}
     </div>
   );

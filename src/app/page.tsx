@@ -21,6 +21,8 @@ import { SettingsPanel } from "./_home/SettingsPanel";
 import { TraineeDashboardModal } from "./_home/TraineeDashboardModal";
 import { UnderDevelopmentNotice } from "./_home/UnderDevelopmentNotice";
 import { ScheduleDayList } from "@/components/ScheduleDayList";
+import type { GridRow } from "@/lib/tasks";
+import { toDateKey, type ScheduleDayPayload } from "@/lib/schedule";
 import type {
   AccountDetails,
   ActivityLog,
@@ -66,6 +68,9 @@ export default function Home() {
       : false,
   );
   const [activeProfile, setActiveProfile] = useState<ActiveProfile>("FOH");
+  const [taskRows, setTaskRows] = useState<GridRow[]>([]);
+  const [scheduleDateKey, setScheduleDateKey] = useState("");
+  const [scheduleDay, setScheduleDay] = useState<ScheduleDayPayload | null>(null);
 
   const canViewActivity = can(user?.role, "activity.view");
   /** Same gate as Settings → Trainee Management (owner/admin). */
@@ -85,14 +90,28 @@ export default function Home() {
 
   const refreshCore = useCallback(async () => {
     const pq = (path: string) => withProfileQuery(path, activeProfileRef.current);
-    const [positionsRes, traineesRes, dashboardRes, accountRes, annRes, profilesRes] =
-      await Promise.all([
+    const todayKey = toDateKey(new Date());
+    setScheduleDateKey(todayKey);
+    const schedulePath = `${pq("/api/schedule")}&date=${encodeURIComponent(todayKey)}`;
+
+    const [
+      positionsRes,
+      traineesRes,
+      dashboardRes,
+      accountRes,
+      annRes,
+      profilesRes,
+      tasksOutcome,
+      scheduleOutcome,
+    ] = await Promise.all([
       api<{ positions: Position[] }>(pq("/api/positions")),
       api<{ trainees: Trainee[] }>(pq("/api/trainees")),
       api<{ trainees: DashboardRow[] }>(pq("/api/dashboard")),
       api<{ account: AccountDetails }>("/api/settings/account"),
       api<{ announcements: AnnouncementRow[] }>("/api/announcements"),
       api<{ profiles: StoreProfileRow[] }>("/api/store-profiles"),
+      api<{ rows: GridRow[] }>(pq("/api/tasks")).catch(() => ({ rows: [] as GridRow[] })),
+      api<ScheduleDayPayload>(schedulePath).catch(() => null),
     ]);
     setPositions(positionsRes.positions);
     setTrainees(traineesRes.trainees);
@@ -100,6 +119,10 @@ export default function Home() {
     setAccountDetails(accountRes.account);
     setAnnouncements(annRes.announcements);
     setStoreProfiles(profilesRes.profiles);
+    setTaskRows(tasksOutcome.rows);
+    if (scheduleOutcome) {
+      setScheduleDay(scheduleOutcome);
+    }
     setActiveProfile((prev) => {
       if (profilesRes.profiles.some((profile) => profile.key === prev)) return prev;
       return profilesRes.profiles[0]?.key ?? "FOH";
@@ -187,9 +210,6 @@ export default function Home() {
         setActiveProfile(authedUser.activeProfile);
       }
       setSessionResolved(true);
-      if (authedUser) {
-        void refreshCoreRef.current().catch(() => undefined);
-      }
     })();
     return () => {
       cancelled = true;
@@ -325,7 +345,6 @@ export default function Home() {
         onLoggedIn={(nextUser) => {
           setUser(nextUser);
           if (nextUser.activeProfile) setActiveProfile(nextUser.activeProfile);
-          void refreshCore().catch(() => undefined);
         }}
         onError={setError}
         error={error}
@@ -401,13 +420,17 @@ export default function Home() {
           />
           */}
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
-          <section className="rounded-xl bg-card p-4 shadow-sm lg:min-w-0 lg:flex-1">
+          <section className="order-2 rounded-xl bg-card p-4 shadow-sm lg:order-1 lg:min-w-0 lg:flex-1">
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
               <h2 className="text-lg font-semibold">Tasks Overview</h2>
             </div>
-            <TasksTodayOverview activeProfile={activeProfile} />
+            <TasksTodayOverview
+              activeProfile={activeProfile}
+              rows={taskRows}
+              onRowsChange={setTaskRows}
+            />
           </section>
-          <section className="rounded-xl bg-card p-4 shadow-sm lg:min-w-0 lg:flex-1">
+          <section className="order-1 rounded-xl bg-card p-4 shadow-sm lg:order-2 lg:min-w-0 lg:flex-1">
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
               <h2 className="text-lg font-semibold">Trainee progress</h2>
               {canOpenTraineeManagement && (
@@ -436,26 +459,35 @@ export default function Home() {
                   <button
                     key={row.id}
                     type="button"
-                    className={`w-full rounded-lg p-3 text-left text-sm font-medium transition focus-visible:outline focus-visible:ring-2 focus-visible:ring-slate-400 ${
+                    className={`group relative w-full overflow-hidden rounded-lg p-3 text-left text-sm font-medium transition focus-visible:outline focus-visible:ring-2 focus-visible:ring-slate-400 ${
                       isComplete
                         ? "bg-emerald-50 text-slate-800 hover:bg-emerald-100/90 dark:bg-emerald-950/35 dark:text-slate-200 dark:hover:bg-emerald-950/50"
-                        : "bg-slate-100 text-slate-900 hover:bg-slate-200/90 dark:bg-slate-700 dark:text-slate-100 dark:hover:bg-slate-600"
+                        : "bg-slate-100 text-slate-900 dark:bg-slate-700 dark:text-slate-100"
                     }`}
                     onClick={() => setDashboardModalTraineeId(row.id)}
                   >
-                    <div className="flex items-center justify-between gap-2">
-                      <strong className="flex items-center gap-2">
-                        <span>{row.name}</span>
-                        {isComplete && (
-                          <span className="text-xs italic font-normal opacity-80">Trained</span>
-                        )}
-                      </strong>
-                      <span className="shrink-0 text-sm font-semibold">{row.percentage}%</span>
+                    {!isComplete && (
+                      <span
+                        aria-hidden
+                        className="absolute inset-y-0 left-0 bg-slate-200 transition-[width] group-hover:bg-slate-300/90 dark:bg-slate-600 dark:group-hover:bg-slate-500"
+                        style={{ width: `${row.percentage}%` }}
+                      />
+                    )}
+                    <div className="relative z-10">
+                      <div className="flex items-center justify-between gap-2">
+                        <strong className="flex items-center gap-2">
+                          <span>{row.name}</span>
+                          {isComplete && (
+                            <span className="text-xs italic font-normal opacity-80">Trained</span>
+                          )}
+                        </strong>
+                        <span className="shrink-0 text-sm font-semibold">{row.percentage}%</span>
+                      </div>
+                      <p className="text-sm">
+                        Completed {row.positionsFullyComplete}/{row.storePositionCount} Remaining{" "}
+                        {row.remainingPositions}
+                      </p>
                     </div>
-                    <p className="text-sm">
-                      Completed {row.positionsFullyComplete}/{row.storePositionCount} Remaining{" "}
-                      {row.remainingPositions}
-                    </p>
                   </button>
                 );
               })}
@@ -511,7 +543,11 @@ export default function Home() {
               Expand
             </button>
           </div>
-          <TasksGrid activeProfile={activeProfile} />
+          <TasksGrid
+            activeProfile={activeProfile}
+            rows={taskRows}
+            onRowsChange={setTaskRows}
+          />
         </section>
       )}
 
@@ -521,7 +557,12 @@ export default function Home() {
             <UnderDevelopmentNotice />
           </div>
           <h2 className="mb-3 text-lg font-semibold">Schedule</h2>
-          <ScheduleDayList activeProfile={activeProfile} canToggleBreaks={user.role !== "VIEWER"} />
+          <ScheduleDayList
+            activeProfile={activeProfile}
+            canToggleBreaks={user.role !== "VIEWER"}
+            dateKey={scheduleDateKey}
+            schedule={scheduleDay}
+          />
         </section>
       )}
 

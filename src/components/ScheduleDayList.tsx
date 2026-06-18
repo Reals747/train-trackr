@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { clientApi } from "@/lib/client-api";
 import { FOURTH_SCHEDULES_ENV_KEYS } from "@/lib/hotschedules/constants";
 import {
@@ -10,16 +10,19 @@ import {
   type ScheduleBreakKey,
 } from "@/lib/schedule-breaks-storage";
 import {
-  toDateKey,
   type ScheduleDayPayload,
   type ScheduleEmployee,
   type ScheduleIntegrationInfo,
 } from "@/lib/schedule";
 import { MOCK_SCHEDULE_PROFILE_NAME } from "@/lib/schedule";
+import { useClientDateKey } from "@/lib/use-client-today";
 
 type Props = {
   activeProfile?: string;
   canToggleBreaks?: boolean;
+  /** When provided with `schedule`, skips a redundant fetch for today's roster. */
+  dateKey?: string;
+  schedule?: ScheduleDayPayload | null;
 };
 
 const SCHEDULE_ROW_GRID =
@@ -143,86 +146,106 @@ function ScheduleEmployeeRow({
   );
 }
 
-export function ScheduleDayList({ activeProfile = "FOH", canToggleBreaks = true }: Props) {
-  const [todayDateKey, setTodayDateKey] = useState<string | null>(null);
-  const [schedule, setSchedule] = useState<ScheduleDayPayload | null>(null);
+export function ScheduleDayList({
+  activeProfile = "FOH",
+  canToggleBreaks = true,
+  dateKey: dateKeyProp,
+  schedule: scheduleProp,
+}: Props) {
+  const clientDateKey = useClientDateKey();
+  const dateKey = dateKeyProp || clientDateKey;
+  const [localSchedule, setLocalSchedule] = useState<ScheduleDayPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [breakEpoch, setBreakEpoch] = useState(0);
 
-  useEffect(() => {
-    setTodayDateKey(toDateKey(new Date()));
-  }, []);
+  const usingPrefetched =
+    scheduleProp != null &&
+    scheduleProp.date === dateKey &&
+    scheduleProp.profile === activeProfile;
+
+  const baseSchedule = usingPrefetched ? scheduleProp : localSchedule;
+
+  const displaySchedule = useMemo(() => {
+    if (!baseSchedule || !dateKey) return baseSchedule;
+    return {
+      ...baseSchedule,
+      employees: applyStoredBreaks(activeProfile, dateKey, baseSchedule.employees),
+    };
+  }, [activeProfile, baseSchedule, breakEpoch, dateKey]);
 
   const load = useCallback(async () => {
-    if (!todayDateKey) return;
+    if (!dateKey) return;
     setLoading(true);
     setLoadError(null);
     try {
       const data = await clientApi<ScheduleDayPayload>(
-        `/api/schedule?profile=${encodeURIComponent(activeProfile)}&date=${encodeURIComponent(todayDateKey)}`,
+        `/api/schedule?profile=${encodeURIComponent(activeProfile)}&date=${encodeURIComponent(dateKey)}`,
       );
-      setSchedule({
-        ...data,
-        employees: applyStoredBreaks(activeProfile, todayDateKey, data.employees),
-      });
+      setLocalSchedule(data);
     } catch (error) {
-      setSchedule(null);
+      setLocalSchedule(null);
       setLoadError(error instanceof Error ? error.message : "Could not load schedule.");
     } finally {
       setLoading(false);
     }
-  }, [activeProfile, todayDateKey]);
+  }, [activeProfile, dateKey]);
 
   useEffect(() => {
+    if (!dateKey) return;
+    if (usingPrefetched) {
+      setLoading(false);
+      setLoadError(null);
+      return;
+    }
     void load();
-  }, [load]);
+  }, [dateKey, load, usingPrefetched]);
 
   const handleBreakToggle = useCallback(
     (employeeId: string, breakKey: ScheduleBreakKey, checked: boolean) => {
-      if (!todayDateKey || !canToggleBreaks) return;
+      if (!dateKey || !canToggleBreaks) return;
 
-      setSchedule((current) => {
-        if (!current) return current;
+      const current = displaySchedule;
+      if (!current) return;
 
-        const employees = current.employees.map((employee) => {
-          if (employee.id !== employeeId) return employee;
-          if (employee[breakKey] === undefined) return employee;
-          return { ...employee, [breakKey]: checked };
-        });
-
-        const updated = employees.find((employee) => employee.id === employeeId);
-        if (updated) {
-          const stored = readScheduleBreakState(activeProfile, todayDateKey, employeeId);
-          writeScheduleBreakState(activeProfile, todayDateKey, employeeId, {
-            ...stored,
-            ...(updated.break30Min !== undefined ? { break30Min: updated.break30Min } : {}),
-            ...(updated.break10MinFirst !== undefined
-              ? { break10MinFirst: updated.break10MinFirst }
-              : {}),
-            ...(updated.break10MinSecond !== undefined
-              ? { break10MinSecond: updated.break10MinSecond }
-              : {}),
-          });
-        }
-
-        return { ...current, employees };
+      const employees = current.employees.map((employee) => {
+        if (employee.id !== employeeId) return employee;
+        if (employee[breakKey] === undefined) return employee;
+        return { ...employee, [breakKey]: checked };
       });
+
+      const updated = employees.find((employee) => employee.id === employeeId);
+      if (updated) {
+        const stored = readScheduleBreakState(activeProfile, dateKey, employeeId);
+        writeScheduleBreakState(activeProfile, dateKey, employeeId, {
+          ...stored,
+          ...(updated.break30Min !== undefined ? { break30Min: updated.break30Min } : {}),
+          ...(updated.break10MinFirst !== undefined
+            ? { break10MinFirst: updated.break10MinFirst }
+            : {}),
+          ...(updated.break10MinSecond !== undefined
+            ? { break10MinSecond: updated.break10MinSecond }
+            : {}),
+        });
+      }
+
+      setBreakEpoch((value) => value + 1);
     },
-    [activeProfile, canToggleBreaks, todayDateKey],
+    [activeProfile, canToggleBreaks, dateKey, displaySchedule],
   );
 
-  if (todayDateKey === null) {
+  if (!dateKey) {
     return <p className="text-sm opacity-70">Loading schedule…</p>;
   }
 
-  const integration = schedule?.integration;
+  const integration = displaySchedule?.integration;
   const showIntegrationError =
     integration?.state === "config_error" || integration?.state === "api_error";
 
   return (
     <div className="space-y-4">
       <p className="text-sm font-medium opacity-80">
-        <span className="font-semibold text-foreground">{schedule?.dayLabel ?? "—"}</span>
+        <span className="font-semibold text-foreground">{displaySchedule?.dayLabel ?? "—"}</span>
       </p>
 
       {integration ? <ScheduleIntegrationNotice integration={integration} /> : null}
@@ -239,10 +262,10 @@ export function ScheduleDayList({ activeProfile = "FOH", canToggleBreaks = true 
 
       {loading ? (
         <p className="text-sm opacity-70">Loading employees…</p>
-      ) : showIntegrationError ? null : !schedule || schedule.employees.length === 0 ? (
+      ) : showIntegrationError ? null : !displaySchedule || displaySchedule.employees.length === 0 ? (
         <p className="rounded-lg bg-slate-100 p-4 text-center text-sm opacity-80 dark:bg-slate-700">
           No employees scheduled for this day.
-          {schedule?.integration.state === "mock" ? (
+          {displaySchedule?.integration.state === "mock" ? (
             <>
               {" "}
               Mock roster is available for{" "}
@@ -266,7 +289,7 @@ export function ScheduleDayList({ activeProfile = "FOH", canToggleBreaks = true 
               <span>Notes</span>
             </div>
             <ul className="space-y-2" role="list">
-              {schedule.employees.map((employee) => (
+              {displaySchedule.employees.map((employee) => (
                 <ScheduleEmployeeRow
                   key={employee.id}
                   employee={employee}
