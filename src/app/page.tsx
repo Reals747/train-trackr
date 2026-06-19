@@ -352,12 +352,37 @@ export default function Home() {
     );
   }
 
+  const headerActionButtons = (
+    <>
+      {canViewActivity ? (
+        <ExpandableHeaderButton
+          label="Activity Feed"
+          active={tab === "activity"}
+          onClick={() => setTab("activity")}
+          icon={<ActivityHistoryIcon className="h-5 w-5" />}
+        />
+      ) : null}
+      <ExpandableHeaderButton
+        label="Settings"
+        active={tab === "settings"}
+        onClick={() => {
+          setTab("settings");
+          setSettingsCategory("account");
+        }}
+        icon={<SettingsGearIcon className="h-5 w-5" />}
+      />
+    </>
+  );
+
   return (
     <main className={`mx-auto flex min-h-screen w-full max-w-5xl flex-col ${appearance.compactCards ? "gap-2 p-2 sm:p-4" : "gap-4 p-3 sm:p-6"}`}>
       <header className="rounded-xl bg-card p-4 shadow-sm">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between md:gap-3">
           <div className="min-w-0 md:flex-1">
-            <h1 className="text-2xl font-bold">Train Trackr</h1>
+            <div className="flex items-center justify-between gap-2 md:block">
+              <h1 className="text-2xl font-bold">Train Trackr</h1>
+              <div className="flex shrink-0 items-center gap-2 md:hidden">{headerActionButtons}</div>
+            </div>
             <p className="text-sm opacity-75 md:truncate">{user.storeName} - {user.name} ({user.role})</p>
           </div>
           <div className="flex flex-wrap items-center justify-end gap-2 md:shrink-0">
@@ -367,23 +392,7 @@ export default function Home() {
               profiles={storeProfiles}
               disabled={profileSaving}
             />
-            {canViewActivity ? (
-              <ExpandableHeaderButton
-                label="Activity Feed"
-                active={tab === "activity"}
-                onClick={() => setTab("activity")}
-                icon={<ActivityHistoryIcon className="h-5 w-5" />}
-              />
-            ) : null}
-            <ExpandableHeaderButton
-              label="Settings"
-              active={tab === "settings"}
-              onClick={() => {
-                setTab("settings");
-                setSettingsCategory("account");
-              }}
-              icon={<SettingsGearIcon className="h-5 w-5" />}
-            />
+            <div className="hidden items-center gap-2 md:flex">{headerActionButtons}</div>
           </div>
         </div>
       </header>
@@ -552,7 +561,7 @@ export default function Home() {
       )}
 
       {tab === "schedule" && (
-        <section className="rounded-xl bg-card p-4 shadow-sm">
+        <section className="min-w-0 rounded-xl bg-card p-3 shadow-sm md:p-3 lg:p-4">
           <div className="mb-4">
             <UnderDevelopmentNotice />
           </div>

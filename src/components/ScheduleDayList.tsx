@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, Fragment } from "react";
 import { clientApi } from "@/lib/client-api";
 import { FOURTH_SCHEDULES_ENV_KEYS } from "@/lib/hotschedules/constants";
 import {
@@ -25,8 +25,19 @@ type Props = {
   schedule?: ScheduleDayPayload | null;
 };
 
+/** Fluid text columns + fixed 30m / 10m / 10m break columns (same order as before). */
 const SCHEDULE_ROW_GRID =
-  "grid grid-cols-[minmax(6.5rem,1.15fr)_minmax(7.5rem,1fr)_minmax(4.5rem,0.65fr)_2.75rem_2.75rem_2.75rem_minmax(5rem,0.9fr)] items-center gap-x-3 gap-y-1";
+  "grid w-full grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)_minmax(0,0.6fr)_2.75rem_2.75rem_2.75rem_minmax(0,0.8fr)] items-center gap-x-1.5 gap-y-1 sm:gap-x-2 lg:gap-x-3";
+
+const SCHEDULE_BREAK_COLS = "grid grid-cols-[2.75rem_2.75rem_2.75rem] items-center gap-x-1.5 sm:gap-x-2 lg:gap-x-3";
+
+function employeeHasBreakSlots(employee: ScheduleEmployee): boolean {
+  return (
+    employee.break30Min !== undefined ||
+    employee.break10MinFirst !== undefined ||
+    employee.break10MinSecond !== undefined
+  );
+}
 
 function applyStoredBreaks(
   profile: string,
@@ -86,13 +97,37 @@ function ScheduleBreakCell({
   label,
   canToggle,
   onToggle,
+  compactLabel,
 }: {
   value: boolean | undefined;
   label: string;
   canToggle: boolean;
   onToggle: (checked: boolean) => void;
+  compactLabel?: string;
 }) {
-  if (value === undefined) return <span aria-hidden />;
+  if (value === undefined) {
+    return (
+      <span
+        className={`flex min-h-4 justify-center ${compactLabel ? "min-w-[2.75rem]" : "w-full"}`}
+        aria-hidden
+      />
+    );
+  }
+  if (compactLabel) {
+    return (
+      <label className="inline-flex items-center gap-1.5 text-xs opacity-80">
+        <input
+          type="checkbox"
+          checked={value}
+          disabled={!canToggle}
+          onChange={(event) => onToggle(event.target.checked)}
+          aria-label={label}
+          className="h-4 w-4 accent-slate-600 disabled:cursor-not-allowed disabled:opacity-60 dark:accent-slate-300"
+        />
+        {compactLabel}
+      </label>
+    );
+  }
   return (
     <span className="flex justify-center">
       <input
@@ -107,6 +142,77 @@ function ScheduleBreakCell({
   );
 }
 
+function ScheduleEmployeeBreaks({
+  employee,
+  canToggleBreaks,
+  onBreakToggle,
+  compact = false,
+}: {
+  employee: ScheduleEmployee;
+  canToggleBreaks: boolean;
+  onBreakToggle: (employeeId: string, breakKey: ScheduleBreakKey, checked: boolean) => void;
+  compact?: boolean;
+}) {
+  return (
+    <>
+      <ScheduleBreakCell
+        value={employee.break30Min}
+        label={`30 minute break for ${employee.name}`}
+        compactLabel={compact ? "30m" : undefined}
+        canToggle={canToggleBreaks}
+        onToggle={(checked) => onBreakToggle(employee.id, "break30Min", checked)}
+      />
+      <ScheduleBreakCell
+        value={employee.break10MinFirst}
+        label={`First 10 minute break for ${employee.name}`}
+        compactLabel={compact ? "10m" : undefined}
+        canToggle={canToggleBreaks}
+        onToggle={(checked) => onBreakToggle(employee.id, "break10MinFirst", checked)}
+      />
+      <ScheduleBreakCell
+        value={employee.break10MinSecond}
+        label={`Second 10 minute break for ${employee.name}`}
+        compactLabel={compact ? "10m" : undefined}
+        canToggle={canToggleBreaks}
+        onToggle={(checked) => onBreakToggle(employee.id, "break10MinSecond", checked)}
+      />
+    </>
+  );
+}
+
+function ScheduleEmployeeCard({
+  employee,
+  canToggleBreaks,
+  onBreakToggle,
+}: {
+  employee: ScheduleEmployee;
+  canToggleBreaks: boolean;
+  onBreakToggle: (employeeId: string, breakKey: ScheduleBreakKey, checked: boolean) => void;
+}) {
+  return (
+    <li className="rounded-lg bg-slate-100 px-3 py-3 text-sm text-slate-900 sm:hidden dark:bg-slate-700 dark:text-slate-100">
+      <div className="flex items-start justify-between gap-2">
+        <span className="min-w-0 truncate font-medium">{employee.name}</span>
+        <span className="shrink-0 text-xs opacity-80">{employee.shiftDuration}</span>
+      </div>
+      <div className="mt-1 flex items-center justify-between gap-2 text-xs opacity-80">
+        <span className="min-w-0 truncate">{employee.shiftTimeFrame}</span>
+        <span className="min-w-0 truncate">{employee.shiftNotes || "—"}</span>
+      </div>
+      {employeeHasBreakSlots(employee) ? (
+        <div className={`mt-2 ml-auto w-fit ${SCHEDULE_BREAK_COLS}`}>
+          <ScheduleEmployeeBreaks
+            employee={employee}
+            canToggleBreaks={canToggleBreaks}
+            onBreakToggle={onBreakToggle}
+            compact
+          />
+        </div>
+      ) : null}
+    </li>
+  );
+}
+
 function ScheduleEmployeeRow({
   employee,
   canToggleBreaks,
@@ -118,30 +224,25 @@ function ScheduleEmployeeRow({
 }) {
   return (
     <li
-      className={`${SCHEDULE_ROW_GRID} rounded-lg bg-slate-100 px-4 py-3 text-sm text-slate-900 dark:bg-slate-700 dark:text-slate-100`}
+      className={`${SCHEDULE_ROW_GRID} hidden rounded-lg bg-slate-100 px-2.5 py-2.5 text-sm text-slate-900 sm:grid lg:px-4 lg:py-3 dark:bg-slate-700 dark:text-slate-100`}
     >
-      <span className="min-w-0 truncate font-medium">{employee.name}</span>
-      <span className="min-w-0 whitespace-nowrap">{employee.shiftTimeFrame}</span>
-      <span className="min-w-0 whitespace-nowrap">{employee.shiftDuration}</span>
-      <ScheduleBreakCell
-        value={employee.break30Min}
-        label={`30 minute break for ${employee.name}`}
-        canToggle={canToggleBreaks}
-        onToggle={(checked) => onBreakToggle(employee.id, "break30Min", checked)}
+      <span className="min-w-0 truncate font-medium" title={employee.name}>
+        {employee.name}
+      </span>
+      <span className="min-w-0 truncate" title={employee.shiftTimeFrame}>
+        {employee.shiftTimeFrame}
+      </span>
+      <span className="min-w-0 truncate" title={employee.shiftDuration}>
+        {employee.shiftDuration}
+      </span>
+      <ScheduleEmployeeBreaks
+        employee={employee}
+        canToggleBreaks={canToggleBreaks}
+        onBreakToggle={onBreakToggle}
       />
-      <ScheduleBreakCell
-        value={employee.break10MinFirst}
-        label={`First 10 minute break for ${employee.name}`}
-        canToggle={canToggleBreaks}
-        onToggle={(checked) => onBreakToggle(employee.id, "break10MinFirst", checked)}
-      />
-      <ScheduleBreakCell
-        value={employee.break10MinSecond}
-        label={`Second 10 minute break for ${employee.name}`}
-        canToggle={canToggleBreaks}
-        onToggle={(checked) => onBreakToggle(employee.id, "break10MinSecond", checked)}
-      />
-      <span className="min-w-0 truncate opacity-80">{employee.shiftNotes || "—"}</span>
+      <span className="min-w-0 truncate opacity-80" title={employee.shiftNotes || undefined}>
+        {employee.shiftNotes || "—"}
+      </span>
     </li>
   );
 }
@@ -274,31 +375,35 @@ export function ScheduleDayList({
           ) : null}
         </p>
       ) : (
-        <div className="overflow-x-auto">
-          <div className="min-w-[52rem]">
-            <div
-              className={`${SCHEDULE_ROW_GRID} px-4 pb-2 text-xs font-semibold uppercase tracking-wide opacity-70`}
-              role="row"
-            >
-              <span>Name</span>
-              <span>Shift</span>
-              <span>Duration</span>
-              <span className="text-center">30m</span>
-              <span className="text-center">10m</span>
-              <span className="text-center">10m</span>
-              <span>Notes</span>
-            </div>
-            <ul className="space-y-2" role="list">
-              {displaySchedule.employees.map((employee) => (
-                <ScheduleEmployeeRow
-                  key={employee.id}
+        <div className="w-full min-w-0">
+          <div
+            className={`${SCHEDULE_ROW_GRID} hidden px-2.5 pb-2 text-xs font-semibold uppercase tracking-wide opacity-70 sm:grid lg:px-4`}
+            role="row"
+          >
+            <span>Name</span>
+            <span>Shift</span>
+            <span>Duration</span>
+            <span className="text-center">30m</span>
+            <span className="text-center">10m</span>
+            <span className="text-center">10m</span>
+            <span>Notes</span>
+          </div>
+          <ul className="space-y-2" role="list">
+            {displaySchedule.employees.map((employee) => (
+              <Fragment key={employee.id}>
+                <ScheduleEmployeeCard
                   employee={employee}
                   canToggleBreaks={canToggleBreaks}
                   onBreakToggle={handleBreakToggle}
                 />
-              ))}
-            </ul>
-          </div>
+                <ScheduleEmployeeRow
+                  employee={employee}
+                  canToggleBreaks={canToggleBreaks}
+                  onBreakToggle={handleBreakToggle}
+                />
+              </Fragment>
+            ))}
+          </ul>
         </div>
       )}
     </div>
