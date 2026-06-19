@@ -41,6 +41,7 @@ model Store {
   taskPresets      TaskPreset[]
   taskWeekArchives TaskWeekArchive[]
   profiles         StoreProfile[]
+  scheduleBreaks   ScheduleBreakCompletion[]
 }
 
 /** Configurable store area profile (FOH, BOH, or custom). `key` tags data rows; `name` is display-only. */
@@ -300,4 +301,26 @@ model ActivityLog {
   user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@index([storeId, createdAt])
+}
+
+/**
+ * Checked-off schedule break for a roster employee on a calendar day.
+ * Sparse: only completed breaks are stored. Scoped per store + profile + date.
+ */
+model ScheduleBreakCompletion {
+  id         String   @id @default(cuid())
+  storeId    String
+  profileKey String
+  /** Local calendar day `YYYY-MM-DD` for the schedule roster. */
+  dateKey    String
+  /** Schedule employee id (mock id or Fourth-derived id). */
+  employeeId String
+  /** `break30Min` | `break10MinFirst` | `break10MinSecond` */
+  breakKey   String
+  completed  Boolean  @default(true)
+  updatedAt  DateTime @updatedAt
+  store      Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@unique([storeId, profileKey, dateKey, employeeId, breakKey])
+  @@index([storeId, profileKey, dateKey])
 }

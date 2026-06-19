@@ -63,11 +63,20 @@ export function buildScheduleShiftFields(
   };
 }
 
+export type ScheduleBreakStatesByEmployee = Partial<
+  Record<
+    string,
+    Partial<Pick<ScheduleEmployee, "break30Min" | "break10MinFirst" | "break10MinSecond">>
+  >
+>;
+
 export type ScheduleDayPayload = {
   profile: string;
   date: string;
   dayLabel: string;
   employees: ScheduleEmployee[];
+  /** Checked breaks synced from the database for this store/profile/day. */
+  breakStates: ScheduleBreakStatesByEmployee;
   /** Where the roster came from; `hotschedules` when live Fourth Schedules API sync succeeds. */
   source: "mock" | "hotschedules";
   /** Integration state for UI messaging (config errors, API failures, mock fallback). */
@@ -156,6 +165,53 @@ export type ScheduleBreakTimeLabels = {
   break10MinSecond?: string;
 };
 
+export type ScheduleBreakSlotKey = "break30Min" | "break10MinFirst" | "break10MinSecond";
+
+export type ScheduleBreakSlot = {
+  key: ScheduleBreakSlotKey;
+  hour24: number;
+  label: string;
+};
+
+export type UpcomingBreakReminder = {
+  employeeId: string;
+  employeeName: string;
+  breakKey: ScheduleBreakSlotKey;
+  label: string;
+  hour24: number;
+  isOverdue: boolean;
+};
+
+/**
+ * Break slots earned by a shift with fractional start hour and 2-hour spacing.
+ * Example: 6:00a–2:00p with all three slots → 8a, 10a, 12p.
+ */
+export function listEmployeeBreakSlots(
+  startHour24: number,
+  employee: Pick<ScheduleEmployee, "break30Min" | "break10MinFirst" | "break10MinSecond">,
+): ScheduleBreakSlot[] {
+  const slots: ScheduleBreakSlot[] = [];
+  let breakIndex = 0;
+
+  if (employee.break30Min !== undefined) {
+    breakIndex += 1;
+    const hour24 = startHour24 + breakIndex * 2;
+    slots.push({ key: "break30Min", hour24, label: formatScheduleHourCompact(hour24) });
+  }
+  if (employee.break10MinFirst !== undefined) {
+    breakIndex += 1;
+    const hour24 = startHour24 + breakIndex * 2;
+    slots.push({ key: "break10MinFirst", hour24, label: formatScheduleHourCompact(hour24) });
+  }
+  if (employee.break10MinSecond !== undefined) {
+    breakIndex += 1;
+    const hour24 = startHour24 + breakIndex * 2;
+    slots.push({ key: "break10MinSecond", hour24, label: formatScheduleHourCompact(hour24) });
+  }
+
+  return slots;
+}
+
 /**
  * Suggested break times at 2-hour intervals from shift start, in column order.
  * Example: 6:00a–2:00p with all three slots → 8a, 10a, 12p.
@@ -165,22 +221,83 @@ export function computeBreakTimeLabels(
   employee: Pick<ScheduleEmployee, "break30Min" | "break10MinFirst" | "break10MinSecond">,
 ): ScheduleBreakTimeLabels {
   const labels: ScheduleBreakTimeLabels = {};
-  let breakIndex = 0;
-
-  if (employee.break30Min !== undefined) {
-    breakIndex += 1;
-    labels.break30Min = formatScheduleHourCompact(startHour24 + breakIndex * 2);
+  for (const slot of listEmployeeBreakSlots(startHour24, employee)) {
+    labels[slot.key] = slot.label;
   }
-  if (employee.break10MinFirst !== undefined) {
-    breakIndex += 1;
-    labels.break10MinFirst = formatScheduleHourCompact(startHour24 + breakIndex * 2);
-  }
-  if (employee.break10MinSecond !== undefined) {
-    breakIndex += 1;
-    labels.break10MinSecond = formatScheduleHourCompact(startHour24 + breakIndex * 2);
-  }
-
   return labels;
+}
+
+/** Local calendar date/time for a break hour on the same day as `day`. */
+export function breakDateTimeOnDay(breakHour24: number, day: Date): Date {
+  const result = new Date(day);
+  const wholeHours = Math.floor(breakHour24);
+  const minutes = Math.round((breakHour24 - wholeHours) * 60);
+  result.setHours(wholeHours, minutes, 0, 0);
+  return result;
+}
+
+/** True when a break falls between `now` and `now + windowMinutes`. */
+export function isBreakDueInNextWindow(
+  breakHour24: number,
+  now: Date,
+  windowMinutes = 30,
+): boolean {
+  const breakAt = breakDateTimeOnDay(breakHour24, now);
+  const windowEnd = new Date(now.getTime() + windowMinutes * 60_000);
+  return breakAt >= now && breakAt <= windowEnd;
+}
+
+/**
+ * Reminder cards appear once a break is within the next half hour and stay until checked,
+ * including after the scheduled time passes.
+ */
+export function isBreakReminderVisible(
+  breakHour24: number,
+  now: Date,
+  windowMinutes = 30,
+): boolean {
+  const breakAt = breakDateTimeOnDay(breakHour24, now);
+  const windowEnd = new Date(now.getTime() + windowMinutes * 60_000);
+  return breakAt <= windowEnd;
+}
+
+/** True when an unchecked break is at least `overdueMinutes` past its scheduled time. */
+export function isBreakOverdue(
+  breakHour24: number,
+  now: Date,
+  overdueMinutes = 30,
+): boolean {
+  const breakAt = breakDateTimeOnDay(breakHour24, now);
+  return now.getTime() - breakAt.getTime() >= overdueMinutes * 60_000;
+}
+
+/** Unchecked breaks due now or earlier, plus those in the next half hour. Sorted soonest first. */
+export function collectUpcomingBreakReminders(
+  employees: ScheduleEmployee[],
+  now: Date,
+  windowMinutes = 30,
+): UpcomingBreakReminder[] {
+  const reminders: UpcomingBreakReminder[] = [];
+
+  for (const employee of employees) {
+    const startHour = parseShiftStartHour(employee.shiftTimeFrame);
+    if (startHour == null) continue;
+
+    for (const slot of listEmployeeBreakSlots(startHour, employee)) {
+      if (employee[slot.key]) continue;
+      if (!isBreakReminderVisible(slot.hour24, now, windowMinutes)) continue;
+      reminders.push({
+        employeeId: employee.id,
+        employeeName: employee.name,
+        breakKey: slot.key,
+        label: slot.label,
+        hour24: slot.hour24,
+        isOverdue: isBreakOverdue(slot.hour24, now, windowMinutes),
+      });
+    }
+  }
+
+  return reminders.sort((left, right) => left.hour24 - right.hour24);
 }
 
 /** ISO date `YYYY-MM-DD` in local time. */

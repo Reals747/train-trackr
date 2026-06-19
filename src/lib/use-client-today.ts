@@ -32,3 +32,30 @@ export function isPendingClientTaskColumn(index: number): boolean {
 export function useClientDateKey(): string {
   return useSyncExternalStore(noopSubscribe, () => toDateKey(new Date()), () => "");
 }
+
+/** Current local time, refreshed on an interval for live schedule reminders. */
+const CLIENT_NOW_UPDATE_MS = 60_000;
+const serverNowSnapshot = new Date(0);
+let cachedClientNow: Date | null = null;
+
+function getClientNowSnapshot(): Date {
+  if (!cachedClientNow) {
+    cachedClientNow = new Date();
+  }
+  return cachedClientNow;
+}
+
+function subscribeClientNow(onStoreChange: () => void): () => void {
+  cachedClientNow = new Date();
+
+  const id = window.setInterval(() => {
+    cachedClientNow = new Date();
+    onStoreChange();
+  }, CLIENT_NOW_UPDATE_MS);
+
+  return () => window.clearInterval(id);
+}
+
+export function useClientNow(): Date {
+  return useSyncExternalStore(subscribeClientNow, getClientNowSnapshot, () => serverNowSnapshot);
+}

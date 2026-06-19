@@ -1,15 +1,18 @@
 import type { ActiveProfile } from "@/lib/profile";
+import { prismaHasScheduleBreakCompletion } from "@/lib/prisma";
 import { fetchFourthSchedulesShiftsForDay } from "@/lib/hotschedules/client";
 import {
   fourthSchedulesConfigErrorMessage,
   resolveFourthSchedulesConfig,
 } from "@/lib/hotschedules/config";
 import { mapFourthShiftsToScheduleEmployees } from "@/lib/hotschedules/mapper";
+import { loadScheduleBreakStates } from "@/lib/schedule-breaks-server";
 import { mockScheduleEmployees } from "@/lib/schedule-mock";
 import {
   formatScheduleDayLabel,
   parseDateKey,
   toDateKey,
+  type ScheduleBreakStatesByEmployee,
   type ScheduleDayPayload,
 } from "@/lib/schedule";
 
@@ -17,7 +20,7 @@ function basePayload(
   profileKey: ActiveProfile,
   dateKey: string,
   dayLabel: string,
-): Omit<ScheduleDayPayload, "employees" | "source" | "integration"> {
+): Omit<ScheduleDayPayload, "employees" | "source" | "integration" | "breakStates"> {
   return {
     profile: profileKey,
     date: dateKey,
@@ -25,12 +28,36 @@ function basePayload(
   };
 }
 
+async function loadBreakStates(
+  storeId: string,
+  profileKey: ActiveProfile,
+  dateKey: string,
+): Promise<ScheduleBreakStatesByEmployee> {
+  if (!prismaHasScheduleBreakCompletion()) return {};
+  try {
+    return await loadScheduleBreakStates(storeId, profileKey, dateKey);
+  } catch (error) {
+    console.error("[schedule-server] loadScheduleBreakStates", error);
+    return {};
+  }
+}
+
+async function withBreakStates(
+  storeId: string,
+  profileKey: ActiveProfile,
+  dateKey: string,
+  payload: Omit<ScheduleDayPayload, "breakStates">,
+): Promise<ScheduleDayPayload> {
+  const breakStates = await loadBreakStates(storeId, profileKey, dateKey);
+  return { ...payload, breakStates };
+}
+
 /**
  * Load employees scheduled for a profile on a calendar day.
  * Uses Fourth Schedules API when enabled and configured; otherwise mock data.
  */
 export async function loadScheduleDay(
-  _storeId: string,
+  storeId: string,
   profileKey: ActiveProfile,
   profileName: string,
   dateKey: string,
@@ -43,16 +70,16 @@ export async function loadScheduleDay(
   const config = resolveFourthSchedulesConfig();
 
   if (config.mode === "disabled") {
-    return {
+    return withBreakStates(storeId, profileKey, normalizedDate, {
       ...base,
       employees: mockScheduleEmployees(profileName, normalizedDate),
       source: "mock",
       integration: { state: "mock" },
-    };
+    });
   }
 
   if (config.mode === "misconfigured") {
-    return {
+    return withBreakStates(storeId, profileKey, normalizedDate, {
       ...base,
       employees: [],
       source: "mock",
@@ -61,22 +88,22 @@ export async function loadScheduleDay(
         missing: config.missing,
         message: fourthSchedulesConfigErrorMessage(config.missing),
       },
-    };
+    });
   }
 
   try {
     const shifts = await fetchFourthSchedulesShiftsForDay(config.credentials, normalizedDate);
 
-    return {
+    return withBreakStates(storeId, profileKey, normalizedDate, {
       ...base,
       employees: mapFourthShiftsToScheduleEmployees(shifts),
       source: "hotschedules",
       integration: { state: "hotschedules" },
-    };
+    });
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Could not load schedule from Fourth Schedules API.";
-    return {
+    return withBreakStates(storeId, profileKey, normalizedDate, {
       ...base,
       employees: [],
       source: "mock",
@@ -84,6 +111,6 @@ export async function loadScheduleDay(
         state: "api_error",
         message,
       },
-    };
+    });
   }
 }

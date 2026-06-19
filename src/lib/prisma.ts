@@ -28,6 +28,14 @@ function hasTaskRow(client: PrismaClient): boolean {
   );
 }
 
+/** True when this generated client includes schedule break completion persistence. */
+function hasScheduleBreakCompletion(client: PrismaClient): boolean {
+  return (
+    typeof (client as { scheduleBreakCompletion?: { findMany?: unknown } }).scheduleBreakCompletion
+      ?.findMany === "function"
+  );
+}
+
 function createClient() {
   return new PrismaClient({
     log: ["error"],
@@ -72,4 +80,9 @@ export function prismaHasTaskCell(): boolean {
 /** Used by the tasks API routes to detect a stale client missing the rows/presets/archive models. */
 export function prismaHasTaskRow(): boolean {
   return hasTaskRow(prisma);
+}
+
+/** Used by schedule break routes after the schedule break completions migration. */
+export function prismaHasScheduleBreakCompletion(): boolean {
+  return hasScheduleBreakCompletion(prisma);
 }

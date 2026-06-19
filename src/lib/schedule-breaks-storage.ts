@@ -40,6 +40,34 @@ export function writeScheduleBreakState(
 }
 
 export function mergeScheduleBreakState(
+  saved: ScheduleBreakState | undefined,
+  employee: {
+    break30Min?: boolean;
+    break10MinFirst?: boolean;
+    break10MinSecond?: boolean;
+  },
+): {
+  break30Min?: boolean;
+  break10MinFirst?: boolean;
+  break10MinSecond?: boolean;
+} {
+  const breaks = saved ?? {};
+  return {
+    break30Min:
+      employee.break30Min === undefined ? undefined : (breaks.break30Min ?? employee.break30Min),
+    break10MinFirst:
+      employee.break10MinFirst === undefined
+        ? undefined
+        : (breaks.break10MinFirst ?? employee.break10MinFirst),
+    break10MinSecond:
+      employee.break10MinSecond === undefined
+        ? undefined
+        : (breaks.break10MinSecond ?? employee.break10MinSecond),
+  };
+}
+
+/** @deprecated Break state is stored in the database. Use mergeScheduleBreakState with API data. */
+export function mergeScheduleBreakStateFromStorage(
   profile: string,
   dateKey: string,
   employee: {
@@ -53,17 +81,5 @@ export function mergeScheduleBreakState(
   break10MinFirst?: boolean;
   break10MinSecond?: boolean;
 } {
-  const saved = readScheduleBreakState(profile, dateKey, employee.id);
-  return {
-    break30Min:
-      employee.break30Min === undefined ? undefined : (saved.break30Min ?? employee.break30Min),
-    break10MinFirst:
-      employee.break10MinFirst === undefined
-        ? undefined
-        : (saved.break10MinFirst ?? employee.break10MinFirst),
-    break10MinSecond:
-      employee.break10MinSecond === undefined
-        ? undefined
-        : (saved.break10MinSecond ?? employee.break10MinSecond),
-  };
+  return mergeScheduleBreakState(readScheduleBreakState(profile, dateKey, employee.id), employee);
 }

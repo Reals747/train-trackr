@@ -5,19 +5,20 @@ import { clientApi } from "@/lib/client-api";
 import { FOURTH_SCHEDULES_ENV_KEYS } from "@/lib/hotschedules/constants";
 import {
   mergeScheduleBreakState,
-  readScheduleBreakState,
-  writeScheduleBreakState,
   type ScheduleBreakKey,
 } from "@/lib/schedule-breaks-storage";
 import {
+  type ScheduleBreakStatesByEmployee,
   type ScheduleDayPayload,
   type ScheduleEmployee,
   type ScheduleIntegrationInfo,
+  type UpcomingBreakReminder,
+  collectUpcomingBreakReminders,
   computeBreakTimeLabels,
   parseShiftStartHour,
 } from "@/lib/schedule";
 import { MOCK_SCHEDULE_PROFILE_NAME } from "@/lib/schedule";
-import { useClientDateKey } from "@/lib/use-client-today";
+import { useClientDateKey, useClientNow } from "@/lib/use-client-today";
 
 type Props = {
   activeProfile?: string;
@@ -48,14 +49,13 @@ function employeeHasBreakSlots(employee: ScheduleEmployee): boolean {
   );
 }
 
-function applyStoredBreaks(
-  profile: string,
-  dateKey: string,
+function applyBreakStates(
   employees: ScheduleEmployee[],
+  breakStates: ScheduleBreakStatesByEmployee = {},
 ): ScheduleEmployee[] {
   return employees.map((employee) => ({
     ...employee,
-    ...mergeScheduleBreakState(profile, dateKey, employee),
+    ...mergeScheduleBreakState(breakStates[employee.id], employee),
   }));
 }
 
@@ -121,7 +121,7 @@ function ScheduleBreakCell({
   const ariaLabel = timeLabel ? `${label} at ${timeLabel}` : label;
 
   return (
-    <span className="inline-flex min-w-0 flex-col items-center justify-center gap-0.5">
+    <span className="inline-flex min-w-0 flex-col items-center justify-center gap-1">
       {timeLabel ? (
         <span className="text-[10px] font-medium leading-none tabular-nums opacity-80 sm:text-xs">
           {timeLabel}
@@ -174,6 +174,102 @@ function ScheduleEmployeeBreaks({
         onToggle={(checked) => onBreakToggle(employee.id, "break10MinSecond", checked)}
       />
     </>
+  );
+}
+
+function breakTypeDisplay(breakKey: UpcomingBreakReminder["breakKey"]): {
+  badge: string;
+  label: string;
+  badgeClassName: string;
+} {
+  if (breakKey === "break30Min") {
+    return {
+      badge: "30m",
+      label: "30 minute break",
+      badgeClassName:
+        "bg-amber-200/90 text-amber-950 ring-1 ring-amber-300/80 dark:bg-amber-900/70 dark:text-amber-50 dark:ring-amber-600/50",
+    };
+  }
+
+  return {
+    badge: "10m",
+    label: breakKey === "break10MinFirst" ? "first 10 minute break" : "second 10 minute break",
+    badgeClassName:
+      "bg-sky-200/90 text-sky-950 ring-1 ring-sky-300/80 dark:bg-sky-900/70 dark:text-sky-50 dark:ring-sky-600/50",
+  };
+}
+
+function ScheduleUpcomingBreakCard({
+  reminder,
+  canToggleBreaks,
+  onBreakToggle,
+}: {
+  reminder: UpcomingBreakReminder;
+  canToggleBreaks: boolean;
+  onBreakToggle: (employeeId: string, breakKey: ScheduleBreakKey, checked: boolean) => void;
+}) {
+  const breakType = breakTypeDisplay(reminder.breakKey);
+
+  return (
+    <div
+      className={`inline-flex min-w-0 items-center gap-2.5 rounded-lg border bg-slate-100 px-2.5 py-2 text-sm text-slate-900 shadow-sm dark:bg-slate-700 dark:text-slate-100 ${
+        reminder.isOverdue
+          ? "border-rose-500 ring-2 ring-rose-400/70 dark:border-rose-500 dark:ring-rose-500/60"
+          : "border-slate-200 dark:border-slate-600"
+      }`}
+    >
+      <span
+        className={`inline-flex shrink-0 items-center justify-center rounded-md px-2 py-1 text-xs font-bold tracking-tight ${breakType.badgeClassName}`}
+        aria-hidden
+      >
+        {breakType.badge}
+      </span>
+      <div className="flex min-w-0 items-center gap-2">
+        <span className="max-w-[8rem] truncate font-medium">{reminder.employeeName}</span>
+        <span className="shrink-0 tabular-nums text-xs font-semibold opacity-70">{reminder.label}</span>
+      </div>
+      <input
+        type="checkbox"
+        checked={false}
+        disabled={!canToggleBreaks}
+        onChange={(event) => onBreakToggle(reminder.employeeId, reminder.breakKey, event.target.checked)}
+        aria-label={`${breakType.label} for ${reminder.employeeName} at ${reminder.label}`}
+        className="h-5 w-5 shrink-0 accent-slate-600 disabled:cursor-not-allowed disabled:opacity-60 dark:accent-slate-300"
+      />
+    </div>
+  );
+}
+
+function ScheduleUpcomingBreaks({
+  employees,
+  canToggleBreaks,
+  onBreakToggle,
+  show,
+}: {
+  employees: ScheduleEmployee[];
+  canToggleBreaks: boolean;
+  onBreakToggle: (employeeId: string, breakKey: ScheduleBreakKey, checked: boolean) => void;
+  show: boolean;
+}) {
+  const now = useClientNow();
+  const reminders = useMemo(
+    () => (show ? collectUpcomingBreakReminders(employees, now) : []),
+    [employees, now, show],
+  );
+
+  if (reminders.length === 0) return null;
+
+  return (
+    <div className="flex min-w-[12rem] flex-1 flex-wrap items-center justify-end gap-2">
+      {reminders.map((reminder) => (
+        <ScheduleUpcomingBreakCard
+          key={`${reminder.employeeId}-${reminder.breakKey}`}
+          reminder={reminder}
+          canToggleBreaks={canToggleBreaks}
+          onBreakToggle={onBreakToggle}
+        />
+      ))}
+    </div>
   );
 }
 
@@ -251,10 +347,12 @@ export function ScheduleDayList({
 }: Props) {
   const clientDateKey = useClientDateKey();
   const dateKey = dateKeyProp || clientDateKey;
+  const isToday = Boolean(dateKey && clientDateKey && dateKey === clientDateKey);
   const [localSchedule, setLocalSchedule] = useState<ScheduleDayPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [breakEpoch, setBreakEpoch] = useState(0);
+  const [breakSaveError, setBreakSaveError] = useState<string | null>(null);
+  const [breakStateOverlay, setBreakStateOverlay] = useState<ScheduleBreakStatesByEmployee>({});
 
   const usingPrefetched =
     scheduleProp != null &&
@@ -263,13 +361,24 @@ export function ScheduleDayList({
 
   const baseSchedule = usingPrefetched ? scheduleProp : localSchedule;
 
+  const mergedBreakStates = useMemo(() => {
+    if (!baseSchedule) return {};
+    return { ...(baseSchedule.breakStates ?? {}), ...breakStateOverlay };
+  }, [baseSchedule, breakStateOverlay]);
+
   const displaySchedule = useMemo(() => {
     if (!baseSchedule || !dateKey) return baseSchedule;
     return {
       ...baseSchedule,
-      employees: applyStoredBreaks(activeProfile, dateKey, baseSchedule.employees),
+      breakStates: mergedBreakStates,
+      employees: applyBreakStates(baseSchedule.employees, mergedBreakStates),
     };
-  }, [activeProfile, baseSchedule, breakEpoch, dateKey]);
+  }, [baseSchedule, dateKey, mergedBreakStates]);
+
+  useEffect(() => {
+    setBreakStateOverlay({});
+    setBreakSaveError(null);
+  }, [activeProfile, baseSchedule?.breakStates, dateKey]);
 
   const load = useCallback(async () => {
     if (!dateKey) return;
@@ -299,36 +408,41 @@ export function ScheduleDayList({
   }, [dateKey, load, usingPrefetched]);
 
   const handleBreakToggle = useCallback(
-    (employeeId: string, breakKey: ScheduleBreakKey, checked: boolean) => {
-      if (!dateKey || !canToggleBreaks) return;
+    async (employeeId: string, breakKey: ScheduleBreakKey, checked: boolean) => {
+      if (!dateKey || !canToggleBreaks || !baseSchedule) return;
 
-      const current = displaySchedule;
-      if (!current) return;
+      const previousOverlay = breakStateOverlay;
+      const nextOverlay: ScheduleBreakStatesByEmployee = {
+        ...previousOverlay,
+        [employeeId]: {
+          ...(baseSchedule.breakStates[employeeId] ?? {}),
+          ...(previousOverlay[employeeId] ?? {}),
+          [breakKey]: checked,
+        },
+      };
 
-      const employees = current.employees.map((employee) => {
-        if (employee.id !== employeeId) return employee;
-        if (employee[breakKey] === undefined) return employee;
-        return { ...employee, [breakKey]: checked };
-      });
+      setBreakSaveError(null);
+      setBreakStateOverlay(nextOverlay);
 
-      const updated = employees.find((employee) => employee.id === employeeId);
-      if (updated) {
-        const stored = readScheduleBreakState(activeProfile, dateKey, employeeId);
-        writeScheduleBreakState(activeProfile, dateKey, employeeId, {
-          ...stored,
-          ...(updated.break30Min !== undefined ? { break30Min: updated.break30Min } : {}),
-          ...(updated.break10MinFirst !== undefined
-            ? { break10MinFirst: updated.break10MinFirst }
-            : {}),
-          ...(updated.break10MinSecond !== undefined
-            ? { break10MinSecond: updated.break10MinSecond }
-            : {}),
+      try {
+        await clientApi("/api/schedule/breaks", {
+          method: "PATCH",
+          body: JSON.stringify({
+            profile: activeProfile,
+            date: dateKey,
+            employeeId,
+            breakKey,
+            completed: checked,
+          }),
         });
+      } catch (error) {
+        setBreakStateOverlay(previousOverlay);
+        setBreakSaveError(
+          error instanceof Error ? error.message : "Could not save break state.",
+        );
       }
-
-      setBreakEpoch((value) => value + 1);
     },
-    [activeProfile, canToggleBreaks, dateKey, displaySchedule],
+    [activeProfile, baseSchedule, breakStateOverlay, canToggleBreaks, dateKey],
   );
 
   if (!dateKey) {
@@ -341,11 +455,34 @@ export function ScheduleDayList({
 
   return (
     <div className="space-y-4">
-      <p className="text-sm font-medium opacity-80">
-        <span className="font-semibold text-foreground">{displaySchedule?.dayLabel ?? "—"}</span>
-      </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h2 className="text-lg font-semibold">Schedule</h2>
+          <p className="text-sm font-medium opacity-80">
+            <span className="font-semibold text-foreground">{displaySchedule?.dayLabel ?? "—"}</span>
+          </p>
+        </div>
+        {!loading && displaySchedule && displaySchedule.employees.length > 0 ? (
+          <ScheduleUpcomingBreaks
+            employees={displaySchedule.employees}
+            canToggleBreaks={canToggleBreaks}
+            onBreakToggle={handleBreakToggle}
+            show={isToday && !showIntegrationError}
+          />
+        ) : null}
+      </div>
 
       {integration ? <ScheduleIntegrationNotice integration={integration} /> : null}
+
+      {breakSaveError ? (
+        <div
+          role="alert"
+          className="rounded-lg border border-rose-300/90 bg-rose-100 px-4 py-3 text-sm text-rose-950 dark:border-rose-500/50 dark:bg-rose-950/40 dark:text-rose-100"
+        >
+          <p className="font-semibold">Could not save break checkbox</p>
+          <p className="mt-1 opacity-90">{breakSaveError}</p>
+        </div>
+      ) : null}
 
       {loadError ? (
         <div

@@ -565,7 +565,6 @@ export default function Home() {
           <div className="mb-4">
             <UnderDevelopmentNotice />
           </div>
-          <h2 className="mb-3 text-lg font-semibold">Schedule</h2>
           <ScheduleDayList
             activeProfile={activeProfile}
             canToggleBreaks={user.role !== "VIEWER"}
