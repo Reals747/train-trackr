@@ -64,7 +64,13 @@ function shiftId(shift: FourthShift): string {
  * Employee display names are not in the Schedules API; UK Employee API can enrich later via `fourthAccountId`.
  */
 export function mapFourthShiftsToScheduleEmployees(shifts: FourthShift[]): ScheduleEmployee[] {
-  return shifts.map((shift) => {
+  const sortedShifts = [...shifts].sort((left, right) => {
+    const leftStart = parseFourthDateTime(left.startDateTime).getTime();
+    const rightStart = parseFourthDateTime(right.startDateTime).getTime();
+    return leftStart - rightStart;
+  });
+
+  return sortedShifts.map((shift) => {
     const durationHours = shiftDurationHours(shift);
     const breakSlots = durationHours > 0 ? computeShiftBreakSlots(durationHours) : {};
 

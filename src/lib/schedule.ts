@@ -105,6 +105,84 @@ export function formatShiftDuration(hours: number): string {
   return `${label} Hr${hours === 1 ? "" : "s"}.`;
 }
 
+/** Compact schedule time for break labels, e.g. `8a` or `8:30a`. */
+export function formatScheduleHourCompact(hour24: number): string {
+  return formatScheduleHour(hour24).replace(/:00([ap])$/, "$1");
+}
+
+/** Parse a schedule hour label such as `6:00a` or `12:30p` into fractional 24h time. */
+export function parseScheduleHourLabel(label: string): number | null {
+  const match = /^(\d{1,2}):(\d{2})([ap])$/i.exec(label.trim());
+  if (!match) return null;
+
+  let hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  const period = match[3].toLowerCase();
+  if (hours < 1 || hours > 12 || minutes < 0 || minutes > 59) return null;
+
+  if (period === "a") {
+    if (hours === 12) hours = 0;
+  } else if (hours !== 12) {
+    hours += 12;
+  }
+
+  return hours + minutes / 60;
+}
+
+/** Read the shift start from a `shiftTimeFrame` string such as `6:00a - 2:00p`. */
+export function parseShiftStartHour(shiftTimeFrame: string): number | null {
+  const [startLabel] = shiftTimeFrame.split(/\s*-\s*/);
+  if (!startLabel) return null;
+  return parseScheduleHourLabel(startLabel);
+}
+
+/** HotSchedules roster order: earliest shift start first (openers → day → closers → evening). */
+export function sortScheduleEmployeesByShiftStart(
+  employees: ScheduleEmployee[],
+): ScheduleEmployee[] {
+  return [...employees].sort((left, right) => {
+    const leftStart = parseShiftStartHour(left.shiftTimeFrame);
+    const rightStart = parseShiftStartHour(right.shiftTimeFrame);
+    if (leftStart == null && rightStart == null) return 0;
+    if (leftStart == null) return 1;
+    if (rightStart == null) return -1;
+    return leftStart - rightStart;
+  });
+}
+
+export type ScheduleBreakTimeLabels = {
+  break30Min?: string;
+  break10MinFirst?: string;
+  break10MinSecond?: string;
+};
+
+/**
+ * Suggested break times at 2-hour intervals from shift start, in column order.
+ * Example: 6:00a–2:00p with all three slots → 8a, 10a, 12p.
+ */
+export function computeBreakTimeLabels(
+  startHour24: number,
+  employee: Pick<ScheduleEmployee, "break30Min" | "break10MinFirst" | "break10MinSecond">,
+): ScheduleBreakTimeLabels {
+  const labels: ScheduleBreakTimeLabels = {};
+  let breakIndex = 0;
+
+  if (employee.break30Min !== undefined) {
+    breakIndex += 1;
+    labels.break30Min = formatScheduleHourCompact(startHour24 + breakIndex * 2);
+  }
+  if (employee.break10MinFirst !== undefined) {
+    breakIndex += 1;
+    labels.break10MinFirst = formatScheduleHourCompact(startHour24 + breakIndex * 2);
+  }
+  if (employee.break10MinSecond !== undefined) {
+    breakIndex += 1;
+    labels.break10MinSecond = formatScheduleHourCompact(startHour24 + breakIndex * 2);
+  }
+
+  return labels;
+}
+
 /** ISO date `YYYY-MM-DD` in local time. */
 export function toDateKey(date: Date): string {
   const year = date.getFullYear();

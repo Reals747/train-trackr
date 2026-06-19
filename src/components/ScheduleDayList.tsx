@@ -13,6 +13,8 @@ import {
   type ScheduleDayPayload,
   type ScheduleEmployee,
   type ScheduleIntegrationInfo,
+  computeBreakTimeLabels,
+  parseShiftStartHour,
 } from "@/lib/schedule";
 import { MOCK_SCHEDULE_PROFILE_NAME } from "@/lib/schedule";
 import { useClientDateKey } from "@/lib/use-client-today";
@@ -25,11 +27,18 @@ type Props = {
   schedule?: ScheduleDayPayload | null;
 };
 
-/** Fluid text columns + fixed 30m / 10m / 10m break columns (same order as before). */
+/** Fluid text columns + fixed 30m / 10m / 10m break columns (checkbox + time label). */
 const SCHEDULE_ROW_GRID =
-  "grid w-full grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)_minmax(0,0.6fr)_2.75rem_2.75rem_2.75rem_minmax(0,0.8fr)] items-center gap-x-1.5 gap-y-1 sm:gap-x-2 lg:gap-x-3";
+  "grid w-full grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)_minmax(0,0.55fr)_minmax(3.5rem,auto)_minmax(3.5rem,auto)_minmax(3.5rem,auto)_minmax(0,0.75fr)] items-center gap-x-1.5 gap-y-1 sm:gap-x-2 lg:gap-x-3";
 
-const SCHEDULE_BREAK_COLS = "grid grid-cols-[2.75rem_2.75rem_2.75rem] items-center gap-x-1.5 sm:gap-x-2 lg:gap-x-3";
+const SCHEDULE_BREAK_COLS =
+  "grid grid-cols-[minmax(3.5rem,auto)_minmax(3.5rem,auto)_minmax(3.5rem,auto)] items-center gap-x-1.5 sm:gap-x-2 lg:gap-x-3";
+
+function breakTimeLabelsForEmployee(employee: ScheduleEmployee) {
+  const startHour = parseShiftStartHour(employee.shiftTimeFrame);
+  if (startHour == null) return {};
+  return computeBreakTimeLabels(startHour, employee);
+}
 
 function employeeHasBreakSlots(employee: ScheduleEmployee): boolean {
   return (
@@ -97,46 +106,34 @@ function ScheduleBreakCell({
   label,
   canToggle,
   onToggle,
-  compactLabel,
+  timeLabel,
 }: {
   value: boolean | undefined;
   label: string;
   canToggle: boolean;
   onToggle: (checked: boolean) => void;
-  compactLabel?: string;
+  timeLabel?: string;
 }) {
   if (value === undefined) {
-    return (
-      <span
-        className={`flex min-h-4 justify-center ${compactLabel ? "min-w-[2.75rem]" : "w-full"}`}
-        aria-hidden
-      />
-    );
+    return <span className="flex min-h-4 w-full justify-center" aria-hidden />;
   }
-  if (compactLabel) {
-    return (
-      <label className="inline-flex items-center gap-1.5 text-xs opacity-80">
-        <input
-          type="checkbox"
-          checked={value}
-          disabled={!canToggle}
-          onChange={(event) => onToggle(event.target.checked)}
-          aria-label={label}
-          className="h-4 w-4 accent-slate-600 disabled:cursor-not-allowed disabled:opacity-60 dark:accent-slate-300"
-        />
-        {compactLabel}
-      </label>
-    );
-  }
+
+  const ariaLabel = timeLabel ? `${label} at ${timeLabel}` : label;
+
   return (
-    <span className="flex justify-center">
+    <span className="inline-flex min-w-0 flex-col items-center justify-center gap-0.5">
+      {timeLabel ? (
+        <span className="text-[10px] font-medium leading-none tabular-nums opacity-80 sm:text-xs">
+          {timeLabel}
+        </span>
+      ) : null}
       <input
         type="checkbox"
         checked={value}
         disabled={!canToggle}
         onChange={(event) => onToggle(event.target.checked)}
-        aria-label={label}
-        className="h-4 w-4 accent-slate-600 disabled:cursor-not-allowed disabled:opacity-60 dark:accent-slate-300"
+        aria-label={ariaLabel}
+        className="h-4 w-4 shrink-0 accent-slate-600 disabled:cursor-not-allowed disabled:opacity-60 dark:accent-slate-300"
       />
     </span>
   );
@@ -146,33 +143,33 @@ function ScheduleEmployeeBreaks({
   employee,
   canToggleBreaks,
   onBreakToggle,
-  compact = false,
 }: {
   employee: ScheduleEmployee;
   canToggleBreaks: boolean;
   onBreakToggle: (employeeId: string, breakKey: ScheduleBreakKey, checked: boolean) => void;
-  compact?: boolean;
 }) {
+  const breakTimes = breakTimeLabelsForEmployee(employee);
+
   return (
     <>
       <ScheduleBreakCell
         value={employee.break30Min}
         label={`30 minute break for ${employee.name}`}
-        compactLabel={compact ? "30m" : undefined}
+        timeLabel={breakTimes.break30Min}
         canToggle={canToggleBreaks}
         onToggle={(checked) => onBreakToggle(employee.id, "break30Min", checked)}
       />
       <ScheduleBreakCell
         value={employee.break10MinFirst}
         label={`First 10 minute break for ${employee.name}`}
-        compactLabel={compact ? "10m" : undefined}
+        timeLabel={breakTimes.break10MinFirst}
         canToggle={canToggleBreaks}
         onToggle={(checked) => onBreakToggle(employee.id, "break10MinFirst", checked)}
       />
       <ScheduleBreakCell
         value={employee.break10MinSecond}
         label={`Second 10 minute break for ${employee.name}`}
-        compactLabel={compact ? "10m" : undefined}
+        timeLabel={breakTimes.break10MinSecond}
         canToggle={canToggleBreaks}
         onToggle={(checked) => onBreakToggle(employee.id, "break10MinSecond", checked)}
       />
@@ -205,7 +202,6 @@ function ScheduleEmployeeCard({
             employee={employee}
             canToggleBreaks={canToggleBreaks}
             onBreakToggle={onBreakToggle}
-            compact
           />
         </div>
       ) : null}

@@ -3,6 +3,7 @@ import {
   buildScheduleShiftFields,
   MOCK_SCHEDULE_PROFILE_NAME,
   parseDateKey,
+  sortScheduleEmployeesByShiftStart,
 } from "@/lib/schedule";
 
 const MOCK_EMPLOYEE_NAMES = [
@@ -23,14 +24,14 @@ type MockShiftTemplate = {
 };
 
 const MOCK_SHIFT_TEMPLATES: MockShiftTemplate[] = [
-  { startHour: 9, durationHours: 8, shiftNotes: "" },
-  { startHour: 10, durationHours: 6, shiftNotes: "Closer" },
+  { startHour: 5.5, durationHours: 8, shiftNotes: "Opener" },
   { startHour: 6, durationHours: 8, shiftNotes: "Opener" },
-  { startHour: 11, durationHours: 4, shiftNotes: "" },
   { startHour: 8, durationHours: 8, shiftNotes: "" },
+  { startHour: 9, durationHours: 8, shiftNotes: "" },
+  { startHour: 11, durationHours: 4, shiftNotes: "" },
   { startHour: 12, durationHours: 6, shiftNotes: "Training" },
-  { startHour: 5, durationHours: 3.5, shiftNotes: "" },
-  { startHour: 14, durationHours: 8, shiftNotes: "Prep" },
+  { startHour: 17, durationHours: 8, shiftNotes: "Closer" },
+  { startHour: 18, durationHours: 4, shiftNotes: "" },
 ];
 
 function mockEmployeeId(name: string): string {
@@ -54,12 +55,14 @@ export function mockScheduleEmployees(profileName: string, dateKey: string): Sch
   const names = isSunday ? MOCK_EMPLOYEE_NAMES.slice(0, 4) : MOCK_EMPLOYEE_NAMES;
   const seed = dateSeed(dateKey);
 
-  return names.map((name, index) => {
-    const shift = MOCK_SHIFT_TEMPLATES[(index + seed) % MOCK_SHIFT_TEMPLATES.length];
-    return {
-      id: mockEmployeeId(name),
-      name,
-      ...buildScheduleShiftFields(shift.startHour, shift.durationHours, shift.shiftNotes),
-    };
-  });
+  return sortScheduleEmployeesByShiftStart(
+    names.map((name, index) => {
+      const shift = MOCK_SHIFT_TEMPLATES[(index + seed) % MOCK_SHIFT_TEMPLATES.length];
+      return {
+        id: mockEmployeeId(name),
+        name,
+        ...buildScheduleShiftFields(shift.startHour, shift.durationHours, shift.shiftNotes),
+      };
+    }),
+  );
 }
