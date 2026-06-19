@@ -1,5 +1,9 @@
 import { Profile } from "@prisma/client";
 import type { Prisma, PrismaClient } from "@prisma/client";
+import {
+  resolveScheduleProfileFilters,
+  type ScheduleProfileFilters,
+} from "@/lib/hotschedules/profile-filters";
 import { prisma } from "@/lib/prisma";
 import {
   isProfileColor,
@@ -54,7 +58,15 @@ export async function listStoreProfiles(storeId: string): Promise<StoreProfileRo
   const rows = await prisma.storeProfile.findMany({
     where: { storeId },
     orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
-    select: { id: true, key: true, name: true, color: true, sortOrder: true },
+    select: {
+      id: true,
+      key: true,
+      name: true,
+      color: true,
+      sortOrder: true,
+      scheduleLocationKeyword: true,
+      scheduleDepartmentKeyword: true,
+    },
   });
   return rows.map((row) => serializeStoreProfile(row));
 }
@@ -92,4 +104,24 @@ export async function assertStoreProfileKey(storeId: string, key: string) {
   await ensureDefaultStoreProfiles(storeId);
   const exists = await storeProfileKeyExists(storeId, key);
   return exists ? key : null;
+}
+
+export async function getStoreProfileScheduleFilters(
+  storeId: string,
+  profileKey: string,
+): Promise<ScheduleProfileFilters> {
+  const row = await prisma.storeProfile.findUnique({
+    where: { storeId_key: { storeId, key: profileKey } },
+    select: {
+      name: true,
+      scheduleLocationKeyword: true,
+      scheduleDepartmentKeyword: true,
+    },
+  });
+
+  if (!row) {
+    return { locationKeyword: null, departmentKeyword: null };
+  }
+
+  return resolveScheduleProfileFilters(row);
 }

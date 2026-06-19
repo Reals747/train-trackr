@@ -1,62 +1,51 @@
+import { isFourthShiftArray } from "@/lib/hotschedules/client";
+import type { FourthShift } from "@/lib/hotschedules/types";
 import { prisma, prismaHasScheduleDayCache } from "@/lib/prisma";
-import type { ScheduleEmployee } from "@/lib/schedule";
 
-export type CachedScheduleDay = {
-  employees: ScheduleEmployee[];
-  source: "mock" | "hotschedules";
+export type CachedFourthShiftsDay = {
+  shifts: FourthShift[];
   fetchedAt: Date;
 };
 
-function isScheduleEmployeeArray(value: unknown): value is ScheduleEmployee[] {
-  return Array.isArray(value);
-}
-
 export async function readScheduleDayCache(
   storeId: string,
-  profileKey: string,
   dateKey: string,
-): Promise<CachedScheduleDay | null> {
+): Promise<CachedFourthShiftsDay | null> {
   if (!prismaHasScheduleDayCache()) return null;
 
   const row = await prisma.scheduleDayCache.findUnique({
     where: {
-      storeId_profileKey_dateKey: { storeId, profileKey, dateKey },
+      storeId_dateKey: { storeId, dateKey },
     },
-    select: { employees: true, source: true, fetchedAt: true },
+    select: { shifts: true, fetchedAt: true },
   });
 
-  if (!row || !isScheduleEmployeeArray(row.employees)) return null;
+  if (!row || !isFourthShiftArray(row.shifts)) return null;
 
   return {
-    employees: row.employees,
-    source: row.source === "hotschedules" ? "hotschedules" : "mock",
+    shifts: row.shifts,
     fetchedAt: row.fetchedAt,
   };
 }
 
 export async function writeScheduleDayCache(
   storeId: string,
-  profileKey: string,
   dateKey: string,
-  employees: ScheduleEmployee[],
-  source: "mock" | "hotschedules",
+  shifts: FourthShift[],
 ): Promise<Date> {
   if (!prismaHasScheduleDayCache()) return new Date();
 
   const row = await prisma.scheduleDayCache.upsert({
     where: {
-      storeId_profileKey_dateKey: { storeId, profileKey, dateKey },
+      storeId_dateKey: { storeId, dateKey },
     },
     create: {
       storeId,
-      profileKey,
       dateKey,
-      employees,
-      source,
+      shifts,
     },
     update: {
-      employees,
-      source,
+      shifts,
       fetchedAt: new Date(),
     },
     select: { fetchedAt: true },

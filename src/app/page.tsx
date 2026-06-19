@@ -93,7 +93,7 @@ export default function Home() {
     const pq = (path: string) => withProfileQuery(path, activeProfileRef.current);
     const todayKey = toBusinessDateKey();
     setScheduleDateKey(todayKey);
-    const schedulePath = `${pq("/api/schedule")}&date=${encodeURIComponent(todayKey)}`;
+    const schedulePath = `${pq("/api/schedule")}&date=${encodeURIComponent(todayKey)}&refresh=1`;
 
     const [
       positionsRes,
@@ -562,7 +562,7 @@ export default function Home() {
       )}
 
       {tab === "schedule" && (
-        <section className="relative min-w-0 rounded-xl bg-card p-3 shadow-sm md:p-3 lg:p-4">
+        <section className="min-w-0 rounded-xl bg-card p-3 shadow-sm md:p-3 lg:p-4">
           <div className="mb-4">
             <UnderDevelopmentNotice />
           </div>
@@ -571,7 +571,6 @@ export default function Home() {
             canToggleBreaks={user.role !== "VIEWER"}
             dateKey={scheduleDateKey}
             schedule={scheduleDay}
-            onScheduleUpdated={setScheduleDay}
           />
         </section>
       )}

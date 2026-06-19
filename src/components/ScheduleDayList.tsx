@@ -26,8 +26,6 @@ type Props = {
   /** When provided with `schedule`, skips a redundant fetch for today's roster. */
   dateKey?: string;
   schedule?: ScheduleDayPayload | null;
-  /** Called after a manual Fourth Schedules refresh so parent prefetch stays in sync. */
-  onScheduleUpdated?: (schedule: ScheduleDayPayload) => void;
 };
 
 /** Fluid text columns + fixed 30m / 10m / 10m break columns (checkbox + time label). */
@@ -346,17 +344,13 @@ export function ScheduleDayList({
   canToggleBreaks = true,
   dateKey: dateKeyProp,
   schedule: scheduleProp,
-  onScheduleUpdated,
 }: Props) {
   const clientDateKey = useClientDateKey();
   const dateKey = dateKeyProp || clientDateKey;
   const isToday = Boolean(dateKey && clientDateKey && dateKey === clientDateKey);
   const [localSchedule, setLocalSchedule] = useState<ScheduleDayPayload | null>(null);
-  const [refreshedSchedule, setRefreshedSchedule] = useState<ScheduleDayPayload | null>(null);
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [refreshError, setRefreshError] = useState<string | null>(null);
   const [breakSaveError, setBreakSaveError] = useState<string | null>(null);
   const [breakStateOverlay, setBreakStateOverlay] = useState<ScheduleBreakStatesByEmployee>({});
 
@@ -365,8 +359,7 @@ export function ScheduleDayList({
     scheduleProp.date === dateKey &&
     scheduleProp.profile === activeProfile;
 
-  const baseSchedule =
-    refreshedSchedule ?? (usingPrefetched ? scheduleProp : localSchedule);
+  const baseSchedule = usingPrefetched ? scheduleProp : localSchedule;
 
   const mergedBreakStates = useMemo(() => {
     if (!baseSchedule) return {};
@@ -387,11 +380,6 @@ export function ScheduleDayList({
     setBreakSaveError(null);
   }, [activeProfile, baseSchedule?.breakStates, dateKey]);
 
-  useEffect(() => {
-    setRefreshedSchedule(null);
-    setRefreshError(null);
-  }, [activeProfile, dateKey, scheduleProp]);
-
   const load = useCallback(async () => {
     if (!dateKey) return;
     setLoading(true);
@@ -408,25 +396,6 @@ export function ScheduleDayList({
       setLoading(false);
     }
   }, [activeProfile, dateKey]);
-
-  const refreshSchedule = useCallback(async () => {
-    if (!dateKey || refreshing) return;
-    setRefreshing(true);
-    setRefreshError(null);
-    try {
-      const data = await clientApi<ScheduleDayPayload>("/api/schedule/refresh", {
-        method: "POST",
-        body: JSON.stringify({ profile: activeProfile, date: dateKey }),
-      });
-      setRefreshedSchedule(data);
-      setLocalSchedule(data);
-      onScheduleUpdated?.(data);
-    } catch (error) {
-      setRefreshError(error instanceof Error ? error.message : "Could not update schedule.");
-    } finally {
-      setRefreshing(false);
-    }
-  }, [activeProfile, dateKey, onScheduleUpdated, refreshing]);
 
   useEffect(() => {
     if (!dateKey) return;
@@ -483,16 +452,9 @@ export function ScheduleDayList({
   const integration = displaySchedule?.integration;
   const showIntegrationError =
     integration?.state === "config_error" || integration?.state === "api_error";
-  const showRefreshButton =
-    isToday &&
-    !loading &&
-    displaySchedule != null &&
-    (displaySchedule.source === "hotschedules" ||
-      integration?.state === "hotschedules" ||
-      integration?.state === "api_error");
 
   return (
-    <div className="relative space-y-4 pb-7">
+    <div className="space-y-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <h2 className="text-lg font-semibold">Schedule</h2>
@@ -530,12 +492,6 @@ export function ScheduleDayList({
           <p className="font-semibold">Schedule request failed</p>
           <p className="mt-1 opacity-90">{loadError}</p>
         </div>
-      ) : null}
-
-      {refreshError ? (
-        <p className="text-xs text-rose-600 dark:text-rose-400" role="alert">
-          {refreshError}
-        </p>
       ) : null}
 
       {loading ? (
@@ -583,18 +539,6 @@ export function ScheduleDayList({
           </ul>
         </div>
       )}
-
-      {showRefreshButton ? (
-        <button
-          type="button"
-          className="absolute bottom-0 right-0 text-[0.6875rem] text-slate-400 underline-offset-2 transition hover:text-slate-600 hover:underline disabled:opacity-50 dark:text-slate-500 dark:hover:text-slate-300"
-          disabled={refreshing}
-          onClick={() => void refreshSchedule()}
-          title="Pull the latest roster from HotSchedules"
-        >
-          {refreshing ? "Updating…" : "Update schedule"}
-        </button>
-      ) : null}
     </div>
   );
 }

@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { PencilIcon } from "./icons";
+import { PencilIcon, EllipsisHorizontalIcon, TrashIcon } from "./icons";
 import { api } from "./api";
-import { DeleteStoreProfileConfirmModal } from "./settings-modals";
+import { DeleteStoreProfileConfirmModal, StoreProfileDetailModal } from "./settings-modals";
 import type { StoreProfileRow } from "@/lib/store-profiles";
 import {
   PROFILE_COLOR_OPTIONS,
@@ -28,6 +28,7 @@ export function StoreProfilesSection({
   const [editName, setEditName] = useState("");
   const [pendingDelete, setPendingDelete] = useState<StoreProfileRow | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState("");
+  const [detailProfile, setDetailProfile] = useState<StoreProfileRow | null>(null);
 
   useEffect(() => {
     if (!editingId) return;
@@ -70,6 +71,29 @@ export function StoreProfilesSection({
         body: JSON.stringify({ color }),
       });
       await onProfilesChange();
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function saveProfileKeywords(
+    profile: StoreProfileRow,
+    payload: {
+      scheduleLocationKeyword: string | null;
+      scheduleDepartmentKeyword: string | null;
+    },
+  ) {
+    setBusyId(profile.id);
+    setError("");
+    try {
+      await api(`/api/settings/store-profiles/${profile.id}`, {
+        method: "PATCH",
+        body: JSON.stringify(payload),
+      });
+      await onProfilesChange();
+      setDetailProfile(null);
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -165,18 +189,35 @@ export function StoreProfilesSection({
                         <PencilIcon className="h-4 w-4" />
                       </button>
                     </div>
-                    <button
-                      type="button"
-                      disabled={busyId === profile.id || profiles.length <= 1}
-                      className="shrink-0 rounded-lg bg-rose-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-50"
-                      onClick={() => {
-                        setError("");
-                        setDeleteConfirm("");
-                        setPendingDelete(profile);
-                      }}
-                    >
-                      Delete profile
-                    </button>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <button
+                        type="button"
+                        aria-label={`Profile details for ${profile.name}`}
+                        title="Profile details"
+                        disabled={busyId === profile.id}
+                        className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-300 bg-slate-100 text-slate-700 hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 dark:hover:bg-slate-600"
+                        onClick={() => {
+                          setError("");
+                          setDetailProfile(profile);
+                        }}
+                      >
+                        <EllipsisHorizontalIcon className="h-5 w-5" />
+                      </button>
+                      <button
+                        type="button"
+                        aria-label={`Delete profile ${profile.name}`}
+                        title="Delete profile"
+                        disabled={busyId === profile.id || profiles.length <= 1}
+                        className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-rose-600 text-white hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-60"
+                        onClick={() => {
+                          setError("");
+                          setDeleteConfirm("");
+                          setPendingDelete(profile);
+                        }}
+                      >
+                        <TrashIcon className="h-5 w-5" />
+                      </button>
+                    </div>
                   </>
                 )}
               </div>
@@ -241,6 +282,23 @@ export function StoreProfilesSection({
 
         {error && <p className="mt-2 text-sm text-rose-600">{error}</p>}
       </div>
+
+      {detailProfile && (
+        <StoreProfileDetailModal
+          profile={
+            profiles.find((row) => row.id === detailProfile.id) ?? detailProfile
+          }
+          busy={busyId === detailProfile.id}
+          error={error}
+          onClose={() => {
+            if (busyId === detailProfile.id) return;
+            setDetailProfile(null);
+            setError("");
+          }}
+          onSave={(payload) => saveProfileKeywords(detailProfile, payload)}
+          onSaveColor={(color) => saveProfileColor(detailProfile, color)}
+        />
+      )}
 
       {pendingDelete && (
         <DeleteStoreProfileConfirmModal

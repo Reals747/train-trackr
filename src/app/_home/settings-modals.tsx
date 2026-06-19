@@ -1,7 +1,15 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { roleLabel, type RoleName } from "@/lib/permissions";
+import { parseScheduleFiltersFromProfileName } from "@/lib/hotschedules/profile-filters";
+import {
+  PROFILE_COLOR_OPTIONS,
+  profileColorSelectClasses,
+  profileColorSwatchClasses,
+  type ProfileColor,
+  type StoreProfileRow,
+} from "@/lib/store-profiles";
 import { DigitCodeInput } from "./DigitCodeInput";
 import { WarningTriangleIcon } from "./icons";
 import type { DashboardRow, DataProfile, StoreCodeKickScope } from "./types";
@@ -695,6 +703,186 @@ export function EditTraineeModal({
               disabled={busy || name.trim().length < 2 || name.trim() === trainee.name}
             >
               {busy ? "Saving…" : "Save"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function scheduleKeywordFormValues(profile: StoreProfileRow) {
+  const parsed = parseScheduleFiltersFromProfileName(profile.name);
+  return {
+    locationKeyword: profile.scheduleLocationKeyword ?? parsed.locationKeyword ?? "",
+    departmentKeyword: profile.scheduleDepartmentKeyword ?? parsed.departmentKeyword ?? "",
+  };
+}
+
+export function StoreProfileDetailModal({
+  profile,
+  busy,
+  error,
+  onClose,
+  onSave,
+  onSaveColor,
+}: {
+  profile: StoreProfileRow;
+  busy: boolean;
+  error: string;
+  onClose: () => void;
+  onSave: (payload: {
+    scheduleLocationKeyword: string | null;
+    scheduleDepartmentKeyword: string | null;
+  }) => void | Promise<void>;
+  onSaveColor: (color: ProfileColor) => void | Promise<void>;
+}) {
+  const initial = useMemo(() => scheduleKeywordFormValues(profile), [profile]);
+  const [locationKeyword, setLocationKeyword] = useState(initial.locationKeyword);
+  const [departmentKeyword, setDepartmentKeyword] = useState(initial.departmentKeyword);
+  const parsedFromName = useMemo(
+    () => parseScheduleFiltersFromProfileName(profile.name),
+    [profile.name],
+  );
+  const usingNameDefaults =
+    !profile.scheduleLocationKeyword &&
+    !profile.scheduleDepartmentKeyword &&
+    Boolean(parsedFromName.locationKeyword || parsedFromName.departmentKeyword);
+
+  useEffect(() => {
+    const next = scheduleKeywordFormValues(profile);
+    setLocationKeyword(next.locationKeyword);
+    setDepartmentKeyword(next.departmentKeyword);
+  }, [profile]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !busy) onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose, busy]);
+
+  return (
+    <div
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="profile-detail-dialog-title"
+      onMouseDown={(e) => {
+        if (busy) return;
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div
+        className="w-full max-w-lg rounded-xl border bg-card p-5 shadow-xl"
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        <h3 id="profile-detail-dialog-title" className="mb-1 text-lg font-semibold">
+          Profile details
+        </h3>
+        <p className="mb-4 text-sm opacity-80">
+          Configure how this profile maps to HotSchedules / Fourth schedule data.
+        </p>
+
+        <div
+          className={`mb-4 rounded-lg border px-3 py-2 ${profileColorSelectClasses(profile.color)}`}
+        >
+          <p className="font-medium">{profile.name}</p>
+          <p className="mt-0.5 font-mono text-xs opacity-70">Key: {profile.key}</p>
+        </div>
+
+        <div className="mb-4">
+          <span className="mb-2 block text-xs font-semibold uppercase tracking-wide opacity-70">
+            Profile color
+          </span>
+          <div className="flex flex-wrap items-center gap-2">
+            {PROFILE_COLOR_OPTIONS.map((color) => (
+              <button
+                key={color}
+                type="button"
+                aria-label={`Set ${profile.name} color to ${color}`}
+                title={color}
+                disabled={busy}
+                className={`h-7 w-7 rounded-full ${profileColorSwatchClasses(color, profile.color === color)}`}
+                onClick={() => void onSaveColor(color)}
+              />
+            ))}
+          </div>
+        </div>
+
+        <form
+          className="space-y-3"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void onSave({
+              scheduleLocationKeyword: locationKeyword.trim() || null,
+              scheduleDepartmentKeyword: departmentKeyword.trim() || null,
+            });
+          }}
+        >
+          <div>
+            <label className="mb-1 block text-sm font-medium" htmlFor="profile-location-keyword">
+              Location keyword
+            </label>
+            <input
+              id="profile-location-keyword"
+              value={locationKeyword}
+              onChange={(e) => setLocationKeyword(e.target.value)}
+              className="w-full rounded-lg border border-slate-200 bg-card px-3 py-2 text-sm text-foreground dark:border-slate-600"
+              placeholder="e.g. Cienega Triangle"
+              maxLength={80}
+              disabled={busy}
+            />
+            <p className="mt-1 text-xs opacity-70">
+              Matched against Fourth <code className="text-xs">locationName</code> (substring,
+              case-insensitive).
+            </p>
+          </div>
+
+          <div>
+            <label className="mb-1 block text-sm font-medium" htmlFor="profile-department-keyword">
+              Department keyword
+            </label>
+            <input
+              id="profile-department-keyword"
+              value={departmentKeyword}
+              onChange={(e) => setDepartmentKeyword(e.target.value)}
+              className="w-full rounded-lg border border-slate-200 bg-card px-3 py-2 text-sm text-foreground dark:border-slate-600"
+              placeholder="e.g. Front of House"
+              maxLength={80}
+              disabled={busy}
+            />
+            <p className="mt-1 text-xs opacity-70">
+              Matched against Fourth <code className="text-xs">departmentName</code> (substring,
+              case-insensitive).
+            </p>
+          </div>
+
+          {usingNameDefaults ? (
+            <p className="rounded-lg border border-sky-200/80 bg-sky-50/80 px-3 py-2 text-xs text-sky-950 dark:border-sky-800 dark:bg-sky-950/40 dark:text-sky-100">
+              Keywords prefilled from the profile name ({profile.name}). Save to store custom
+              values, or clear both fields to rely on name parsing when unset in the database.
+            </p>
+          ) : null}
+
+          {error ? <p className="text-sm text-rose-600">{error}</p> : null}
+
+          <div className="flex flex-wrap justify-end gap-2 pt-1">
+            <button
+              type="button"
+              className="rounded-lg border px-4 py-2 text-sm font-medium"
+              disabled={busy}
+              onClick={onClose}
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="btn-accent rounded-lg px-4 py-2 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-60"
+              disabled={busy}
+            >
+              {busy ? "Saving…" : "Save keywords"}
             </button>
           </div>
         </form>

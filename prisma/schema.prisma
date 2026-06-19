@@ -47,14 +47,18 @@ model Store {
 
 /** Configurable store area profile (FOH, BOH, or custom). `key` tags data rows; `name` is display-only. */
 model StoreProfile {
-  id        String   @id @default(cuid())
-  storeId   String
-  key       String
-  name      String
-  color     String   @default("sky")
-  sortOrder Int      @default(0)
-  createdAt DateTime @default(now())
-  store     Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  id                        String   @id @default(cuid())
+  storeId                   String
+  key                       String
+  name                      String
+  color                     String   @default("sky")
+  sortOrder                 Int      @default(0)
+  /** Optional override: substring match on Fourth `locationName` for schedule filtering. */
+  scheduleLocationKeyword   String?
+  /** Optional override: substring match on Fourth `departmentName` for schedule filtering. */
+  scheduleDepartmentKeyword String?
+  createdAt                 DateTime @default(now())
+  store                     Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
 
   @@unique([storeId, key])
   @@index([storeId, sortOrder])
@@ -327,20 +331,18 @@ model ScheduleBreakCompletion {
 }
 
 /**
- * Cached daily schedule roster fetched from Fourth Schedules (or mock in dev).
- * One row per store + profile + business day; refreshed on login or manually.
+ * Cached raw Fourth Schedules shifts for a store business day.
+ * One API fetch per store + day; profiles filter this shared roster client-side.
  */
 model ScheduleDayCache {
-  id         String   @id @default(cuid())
-  storeId    String
-  profileKey String
+  id        String   @id @default(cuid())
+  storeId   String
   /** Business day `YYYY-MM-DD` (rolls at 3:00a local). */
-  dateKey    String
-  employees  Json
-  source     String
-  fetchedAt  DateTime @default(now())
-  store      Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  dateKey   String
+  shifts    Json
+  fetchedAt DateTime @default(now())
+  store     Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
 
-  @@unique([storeId, profileKey, dateKey])
-  @@index([storeId, profileKey, dateKey])
+  @@unique([storeId, dateKey])
+  @@index([storeId, dateKey])
 }

@@ -10,10 +10,17 @@ const patchSchema = z
   .object({
     name: z.string().trim().min(1).max(40).optional(),
     color: z.string().trim().optional(),
+    scheduleLocationKeyword: z.string().trim().max(80).nullable().optional(),
+    scheduleDepartmentKeyword: z.string().trim().max(80).nullable().optional(),
   })
-  .refine((value) => value.name !== undefined || value.color !== undefined, {
-    message: "Provide a name or color to update",
-  });
+  .refine(
+    (value) =>
+      value.name !== undefined ||
+      value.color !== undefined ||
+      value.scheduleLocationKeyword !== undefined ||
+      value.scheduleDepartmentKeyword !== undefined,
+    { message: "Provide a field to update" },
+  );
 
 export async function PATCH(
   request: Request,
@@ -33,13 +40,24 @@ export async function PATCH(
   });
   if (!existing) return errorResponse("Profile not found", 404);
 
-  const data: { name?: string; color?: string } = {};
+  const data: {
+    name?: string;
+    color?: string;
+    scheduleLocationKeyword?: string | null;
+    scheduleDepartmentKeyword?: string | null;
+  } = {};
   if (parsed.data.name !== undefined) data.name = parsed.data.name;
   if (parsed.data.color !== undefined) {
     if (!isProfileColor(parsed.data.color)) {
       return errorResponse("Invalid profile color");
     }
     data.color = parsed.data.color;
+  }
+  if (parsed.data.scheduleLocationKeyword !== undefined) {
+    data.scheduleLocationKeyword = parsed.data.scheduleLocationKeyword?.trim() || null;
+  }
+  if (parsed.data.scheduleDepartmentKeyword !== undefined) {
+    data.scheduleDepartmentKeyword = parsed.data.scheduleDepartmentKeyword?.trim() || null;
   }
 
   const updated = await prisma.storeProfile.update({

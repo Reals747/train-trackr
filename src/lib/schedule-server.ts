@@ -1,17 +1,23 @@
 import type { ActiveProfile } from "@/lib/profile";
-import { prismaHasScheduleBreakCompletion, prismaHasScheduleDayCache } from "@/lib/prisma";
 import { fetchFourthSchedulesShiftsForDay } from "@/lib/hotschedules/client";
 import {
   fourthSchedulesConfigErrorMessage,
   resolveFourthSchedulesConfig,
 } from "@/lib/hotschedules/config";
 import { mapFourthShiftsToScheduleEmployees } from "@/lib/hotschedules/mapper";
+import {
+  filterFourthShiftsForProfile,
+  type ScheduleProfileFilters,
+} from "@/lib/hotschedules/profile-filters";
+import type { FourthShift } from "@/lib/hotschedules/types";
+import { prismaHasScheduleBreakCompletion, prismaHasScheduleDayCache } from "@/lib/prisma";
 import { readScheduleDayCache, writeScheduleDayCache } from "@/lib/schedule-cache-server";
 import {
   loadScheduleBreakStates,
   purgeStaleScheduleBreakCompletions,
 } from "@/lib/schedule-breaks-server";
 import { mockScheduleEmployees } from "@/lib/schedule-mock";
+import { getStoreProfileScheduleFilters } from "@/lib/store-profiles-server";
 import {
   formatScheduleDayLabel,
   parseDateKey,
@@ -83,20 +89,28 @@ async function withBreakStates(
   return { ...payload, breakStates };
 }
 
-async function loadHotschedulesRoster(
+function mapProfileShiftsToEmployees(
+  shifts: FourthShift[],
+  profileFilters: ScheduleProfileFilters,
+): ScheduleEmployee[] {
+  const filtered = filterFourthShiftsForProfile(shifts, profileFilters);
+  return mapFourthShiftsToScheduleEmployees(filtered);
+}
+
+/** One Fourth fetch (or cache read) per store + business day. */
+async function loadFourthShiftsForStoreDay(
   storeId: string,
-  profileKey: ActiveProfile,
   dateKey: string,
   forceRefresh: boolean,
 ): Promise<{
-  employees: ScheduleEmployee[];
+  shifts: FourthShift[];
   fetchedAt: Date;
   fromCache: boolean;
 }> {
   if (!forceRefresh && prismaHasScheduleDayCache()) {
-    const cached = await readScheduleDayCache(storeId, profileKey, dateKey);
+    const cached = await readScheduleDayCache(storeId, dateKey);
     if (cached) {
-      return { employees: cached.employees, fetchedAt: cached.fetchedAt, fromCache: true };
+      return { shifts: cached.shifts, fetchedAt: cached.fetchedAt, fromCache: true };
     }
   }
 
@@ -106,10 +120,32 @@ async function loadHotschedulesRoster(
   }
 
   const shifts = await fetchFourthSchedulesShiftsForDay(config.credentials, dateKey);
-  const employees = mapFourthShiftsToScheduleEmployees(shifts);
-  const fetchedAt = await writeScheduleDayCache(storeId, profileKey, dateKey, employees, "hotschedules");
+  const fetchedAt = await writeScheduleDayCache(storeId, dateKey, shifts);
 
-  return { employees, fetchedAt, fromCache: false };
+  return { shifts, fetchedAt, fromCache: false };
+}
+
+async function loadHotschedulesRoster(
+  storeId: string,
+  profileFilters: ScheduleProfileFilters,
+  dateKey: string,
+  forceRefresh: boolean,
+): Promise<{
+  employees: ScheduleEmployee[];
+  fetchedAt: Date;
+  fromCache: boolean;
+}> {
+  const { shifts, fetchedAt, fromCache } = await loadFourthShiftsForStoreDay(
+    storeId,
+    dateKey,
+    forceRefresh,
+  );
+
+  return {
+    employees: mapProfileShiftsToEmployees(shifts, profileFilters),
+    fetchedAt,
+    fromCache,
+  };
 }
 
 /**
@@ -173,10 +209,12 @@ export async function loadScheduleDay(
     );
   }
 
+  const profileFilters = await getStoreProfileScheduleFilters(storeId, profileKey);
+
   try {
     const { employees, fetchedAt, fromCache } = await loadHotschedulesRoster(
       storeId,
-      profileKey,
+      profileFilters,
       normalizedDate,
       forceRefresh,
     );
@@ -195,7 +233,7 @@ export async function loadScheduleDay(
       ),
     );
   } catch (error) {
-    const cached = !forceRefresh ? await readScheduleDayCache(storeId, profileKey, normalizedDate) : null;
+    const cached = !forceRefresh ? await readScheduleDayCache(storeId, normalizedDate) : null;
     if (cached) {
       return withBreakStates(
         storeId,
@@ -203,7 +241,7 @@ export async function loadScheduleDay(
         normalizedDate,
         rosterPayload(
           base,
-          cached.employees,
+          mapProfileShiftsToEmployees(cached.shifts, profileFilters),
           "hotschedules",
           {
             state: "api_error",

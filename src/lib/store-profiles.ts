@@ -9,11 +9,31 @@ export type StoreProfileRow = {
   name: string;
   color: ProfileColor;
   sortOrder: number;
+  /** Substring match on Fourth `locationName` for schedule filtering. */
+  scheduleLocationKeyword: string | null;
+  /** Substring match on Fourth `departmentName` for schedule filtering. */
+  scheduleDepartmentKeyword: string | null;
 };
 
 export const FALLBACK_STORE_PROFILES: StoreProfileRow[] = [
-  { id: "fallback-foh", key: "FOH", name: "FOH", color: "sky", sortOrder: 0 },
-  { id: "fallback-boh", key: "BOH", name: "BOH", color: "amber", sortOrder: 1 },
+  {
+    id: "fallback-foh",
+    key: "FOH",
+    name: "FOH",
+    color: "sky",
+    sortOrder: 0,
+    scheduleLocationKeyword: null,
+    scheduleDepartmentKeyword: null,
+  },
+  {
+    id: "fallback-boh",
+    key: "BOH",
+    name: "BOH",
+    color: "amber",
+    sortOrder: 1,
+    scheduleLocationKeyword: null,
+    scheduleDepartmentKeyword: null,
+  },
 ];
 
 export function isProfileColor(value: string): value is ProfileColor {
@@ -75,6 +95,8 @@ export function serializeStoreProfile(row: {
   name: string;
   color: string;
   sortOrder: number;
+  scheduleLocationKeyword?: string | null;
+  scheduleDepartmentKeyword?: string | null;
 }): StoreProfileRow {
   return {
     id: row.id,
@@ -82,5 +104,7 @@ export function serializeStoreProfile(row: {
     name: row.name,
     color: isProfileColor(row.color) ? row.color : "sky",
     sortOrder: row.sortOrder,
+    scheduleLocationKeyword: row.scheduleLocationKeyword?.trim() || null,
+    scheduleDepartmentKeyword: row.scheduleDepartmentKeyword?.trim() || null,
   };
 }

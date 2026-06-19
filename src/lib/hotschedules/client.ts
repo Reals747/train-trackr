@@ -39,6 +39,19 @@ function isFourthShift(value: unknown): value is FourthShift {
   );
 }
 
+/** Fourth may return `workDate` as `YYYY-MM-DD` or `YYYY-MM-DDT00:00:0000`. */
+export function normalizeFourthWorkDate(workDate: string): string | null {
+  const trimmed = workDate.trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
+  const datePart = trimmed.slice(0, 10);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(datePart)) return datePart;
+  return null;
+}
+
+export function isFourthShiftArray(value: unknown): value is FourthShift[] {
+  return Array.isArray(value) && value.every(isFourthShift);
+}
+
 /**
  * Fetch published shifts for a calendar day.
  * Fourth assigns each shift to the day it ends (`workDate`); we query that day inclusively.
@@ -79,5 +92,5 @@ export async function fetchFourthSchedulesShiftsForDay(
   const isoDateKey = dateKey.trim();
   return parsed
     .filter(isFourthShift)
-    .filter((shift) => shift.workDate === isoDateKey);
+    .filter((shift) => normalizeFourthWorkDate(shift.workDate) === isoDateKey);
 }
