@@ -249,8 +249,10 @@ export function isBreakDueInNextWindow(
 
 /**
  * Reminder cards appear once a break is within the next half hour and stay until checked,
- * including after the scheduled time passes.
+ * including after the scheduled time passes, but drop off after this many minutes overdue.
  */
+export const BREAK_REMINDER_MAX_OVERDUE_MINUTES = 120;
+
 export function isBreakReminderVisible(
   breakHour24: number,
   now: Date,
@@ -258,7 +260,11 @@ export function isBreakReminderVisible(
 ): boolean {
   const breakAt = breakDateTimeOnDay(breakHour24, now);
   const windowEnd = new Date(now.getTime() + windowMinutes * 60_000);
-  return breakAt <= windowEnd;
+  if (breakAt > windowEnd) return false;
+  if (now.getTime() - breakAt.getTime() >= BREAK_REMINDER_MAX_OVERDUE_MINUTES * 60_000) {
+    return false;
+  }
+  return true;
 }
 
 /** True when an unchecked break is at least `overdueMinutes` past its scheduled time. */
