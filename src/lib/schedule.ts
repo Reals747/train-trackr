@@ -77,6 +77,10 @@ export type ScheduleDayPayload = {
   employees: ScheduleEmployee[];
   /** Checked breaks synced from the database for this store/profile/day. */
   breakStates: ScheduleBreakStatesByEmployee;
+  /** When the roster was last fetched from Fourth (or read from cache). */
+  fetchedAt: string | null;
+  /** True when employees came from the local schedule cache without a live Fourth call. */
+  fromCache: boolean;
   /** Where the roster came from; `hotschedules` when live Fourth Schedules API sync succeeds. */
   source: "mock" | "hotschedules";
   /** Integration state for UI messaging (config errors, API failures, mock fallback). */

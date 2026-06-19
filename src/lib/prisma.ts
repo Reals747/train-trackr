@@ -36,6 +36,14 @@ function hasScheduleBreakCompletion(client: PrismaClient): boolean {
   );
 }
 
+/** True when this generated client includes the schedule day roster cache. */
+function hasScheduleDayCache(client: PrismaClient): boolean {
+  return (
+    typeof (client as { scheduleDayCache?: { findUnique?: unknown } }).scheduleDayCache
+      ?.findUnique === "function"
+  );
+}
+
 function createClient() {
   return new PrismaClient({
     log: ["error"],
@@ -85,4 +93,9 @@ export function prismaHasTaskRow(): boolean {
 /** Used by schedule break routes after the schedule break completions migration. */
 export function prismaHasScheduleBreakCompletion(): boolean {
   return hasScheduleBreakCompletion(prisma);
+}
+
+/** Used by schedule cache after the schedule day cache migration. */
+export function prismaHasScheduleDayCache(): boolean {
+  return hasScheduleDayCache(prisma);
 }

@@ -72,3 +72,14 @@ export async function setScheduleBreakCompleted(
     },
   });
 }
+
+/** Drop break checkbox rows older than 48 hours (prior business days). */
+export async function purgeStaleScheduleBreakCompletions(
+  maxAgeHours = 48,
+): Promise<number> {
+  const cutoff = new Date(Date.now() - maxAgeHours * 60 * 60 * 1000);
+  const result = await prisma.scheduleBreakCompletion.deleteMany({
+    where: { updatedAt: { lt: cutoff } },
+  });
+  return result.count;
+}

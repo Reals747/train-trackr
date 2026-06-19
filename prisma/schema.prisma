@@ -42,6 +42,7 @@ model Store {
   taskWeekArchives TaskWeekArchive[]
   profiles         StoreProfile[]
   scheduleBreaks   ScheduleBreakCompletion[]
+  scheduleDayCaches ScheduleDayCache[]
 }
 
 /** Configurable store area profile (FOH, BOH, or custom). `key` tags data rows; `name` is display-only. */
@@ -322,5 +323,24 @@ model ScheduleBreakCompletion {
   store      Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
 
   @@unique([storeId, profileKey, dateKey, employeeId, breakKey])
+  @@index([storeId, profileKey, dateKey])
+}
+
+/**
+ * Cached daily schedule roster fetched from Fourth Schedules (or mock in dev).
+ * One row per store + profile + business day; refreshed on login or manually.
+ */
+model ScheduleDayCache {
+  id         String   @id @default(cuid())
+  storeId    String
+  profileKey String
+  /** Business day `YYYY-MM-DD` (rolls at 3:00a local). */
+  dateKey    String
+  employees  Json
+  source     String
+  fetchedAt  DateTime @default(now())
+  store      Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@unique([storeId, profileKey, dateKey])
   @@index([storeId, profileKey, dateKey])
 }

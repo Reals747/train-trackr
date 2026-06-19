@@ -22,7 +22,8 @@ import { TraineeDashboardModal } from "./_home/TraineeDashboardModal";
 import { UnderDevelopmentNotice } from "./_home/UnderDevelopmentNotice";
 import { ScheduleDayList } from "@/components/ScheduleDayList";
 import type { GridRow } from "@/lib/tasks";
-import { toDateKey, type ScheduleDayPayload } from "@/lib/schedule";
+import { toBusinessDateKey } from "@/lib/business-day";
+import type { ScheduleDayPayload } from "@/lib/schedule";
 import type {
   AccountDetails,
   ActivityLog,
@@ -90,7 +91,7 @@ export default function Home() {
 
   const refreshCore = useCallback(async () => {
     const pq = (path: string) => withProfileQuery(path, activeProfileRef.current);
-    const todayKey = toDateKey(new Date());
+    const todayKey = toBusinessDateKey();
     setScheduleDateKey(todayKey);
     const schedulePath = `${pq("/api/schedule")}&date=${encodeURIComponent(todayKey)}`;
 
@@ -561,7 +562,7 @@ export default function Home() {
       )}
 
       {tab === "schedule" && (
-        <section className="min-w-0 rounded-xl bg-card p-3 shadow-sm md:p-3 lg:p-4">
+        <section className="relative min-w-0 rounded-xl bg-card p-3 shadow-sm md:p-3 lg:p-4">
           <div className="mb-4">
             <UnderDevelopmentNotice />
           </div>
@@ -570,6 +571,7 @@ export default function Home() {
             canToggleBreaks={user.role !== "VIEWER"}
             dateKey={scheduleDateKey}
             schedule={scheduleDay}
+            onScheduleUpdated={setScheduleDay}
           />
         </section>
       )}
