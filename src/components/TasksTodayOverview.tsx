@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { clientApi } from "@/lib/client-api";
 import {
   isPendingClientTaskColumn,
@@ -19,11 +19,20 @@ type Props = {
   activeProfile?: string;
   rows: GridRow[];
   onRowsChange: (rows: GridRow[]) => void;
+  /** Stretch the list to fill the dashboard card (min height = collapsed cap). */
+  fillHeight?: boolean;
 };
 
-export function TasksTodayOverview({ activeProfile = "FOH", rows, onRowsChange }: Props) {
+export function TasksTodayOverview({
+  activeProfile = "FOH",
+  rows,
+  onRowsChange,
+  fillHeight = false,
+}: Props) {
   const todayColIndex = useClientTaskColumnIndex();
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(() => fillHeight);
+  const listRef = useRef<HTMLDivElement>(null);
+  const [showExpandControl, setShowExpandControl] = useState(false);
 
   const toggleTask = useCallback(
     async (rowId: string, lineIndex: number, done: boolean) => {
@@ -52,25 +61,67 @@ export function TasksTodayOverview({ activeProfile = "FOH", rows, onRowsChange }
     [onRowsChange, rows, todayColIndex],
   );
 
-  if (isPendingClientTaskColumn(todayColIndex)) {
-    return <p className="text-sm opacity-70">Loading today&apos;s tasks…</p>;
-  }
+  const pendingColumn = isPendingClientTaskColumn(todayColIndex);
+  const isSunday = !pendingColumn && todayColIndex < 0;
+  const dayName = todayColIndex >= 0 ? TASK_DAYS[todayColIndex] : "";
+  const todays = todayColIndex >= 0
+    ? rows
+        .map((row) => ({ row, tasks: parseTaskLines(row.cells[todayColIndex] ?? "") }))
+        .filter((entry) => entry.tasks.length > 0)
+    : [];
 
-  if (todayColIndex < 0) {
+  useLayoutEffect(() => {
+    const el = listRef.current;
+    if (!el || todays.length === 0) {
+      setShowExpandControl(false);
+      return;
+    }
+
+    const update = () => {
+      const clipped = el.scrollHeight > el.clientHeight + 1;
+      if (fillHeight) {
+        setShowExpandControl(!expanded && clipped);
+        return;
+      }
+      setShowExpandControl(clipped);
+    };
+
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [expanded, fillHeight, todays]);
+
+  const rootClass = fillHeight ? "flex min-h-0 flex-1 flex-col space-y-3" : "space-y-3";
+
+  const listClass = fillHeight
+    ? expanded
+      ? "min-h-[22.5rem] flex-1 overflow-y-auto overscroll-contain pr-1"
+      : "max-h-[22.5rem] min-h-[22.5rem] overflow-y-auto overscroll-contain pr-1"
+    : expanded
+      ? undefined
+      : "max-h-[22.5rem] overflow-y-auto overscroll-contain pr-1";
+
+  if (pendingColumn) {
     return (
-      <p className="text-sm opacity-70">
-        No tasks are scheduled on Sundays. Check back Monday, or open the Tasks tab for the full week.
-      </p>
+      <div className={rootClass}>
+        <p className="text-sm opacity-70">Loading today&apos;s tasks…</p>
+      </div>
     );
   }
 
-  const dayName = TASK_DAYS[todayColIndex];
-  const todays = rows
-    .map((row) => ({ row, tasks: parseTaskLines(row.cells[todayColIndex] ?? "") }))
-    .filter((entry) => entry.tasks.length > 0);
+  if (isSunday) {
+    return (
+      <div className={rootClass}>
+        <p className="text-sm opacity-70">
+          No tasks are scheduled on Sundays. Check back Monday, or open the Tasks tab for the full week.
+        </p>
+      </div>
+    );
+  }
 
   return (
-    <div className="space-y-3">
+    <div className={rootClass}>
       <p className="text-sm font-medium opacity-80">
         Today · <span className="font-semibold text-foreground">{dayName}</span>
       </p>
@@ -80,13 +131,7 @@ export function TasksTodayOverview({ activeProfile = "FOH", rows, onRowsChange }
         </p>
       ) : (
         <>
-          <div
-            className={
-              expanded
-                ? undefined
-                : "max-h-[22.5rem] overflow-y-auto overscroll-contain pr-1"
-            }
-          >
+          <div ref={listRef} className={listClass}>
             <ul className="space-y-3">
               {todays.map(({ row, tasks }) => (
                 <li
@@ -118,13 +163,15 @@ export function TasksTodayOverview({ activeProfile = "FOH", rows, onRowsChange }
               ))}
             </ul>
           </div>
-          <button
-            type="button"
-            className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 focus-visible:outline focus-visible:ring-2 focus-visible:ring-slate-400 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800"
-            onClick={() => setExpanded((value) => !value)}
-          >
-            {expanded ? "Collapse" : "Expand"}
-          </button>
+          {showExpandControl ? (
+            <button
+              type="button"
+              className="w-full shrink-0 rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 focus-visible:outline focus-visible:ring-2 focus-visible:ring-slate-400 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800"
+              onClick={() => setExpanded((value) => !value)}
+            >
+              {expanded ? "Collapse" : "Expand"}
+            </button>
+          ) : null}
         </>
       )}
     </div>

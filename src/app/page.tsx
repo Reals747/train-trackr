@@ -7,6 +7,7 @@ import { can } from "@/lib/permissions";
 import LoadingScreen from "@/components/LoadingScreen";
 import { ExpandIcon, TasksGrid } from "@/components/TasksGrid";
 import { TasksTodayOverview } from "@/components/TasksTodayOverview";
+import { ScheduleBreakRemindersOverview } from "@/components/ScheduleBreakRemindersOverview";
 import { api } from "./_home/api";
 import { ACCENT_SWATCHES, DEFAULT_APPEARANCE } from "./_home/appearance";
 import { ActivityHistoryIcon, SettingsGearIcon } from "./_home/icons";
@@ -19,7 +20,7 @@ import { useProfileSwitch } from "./_home/useProfileSwitch";
 import { withProfileQuery } from "./_home/profile-query";
 import { SettingsPanel } from "./_home/SettingsPanel";
 import { TraineeDashboardModal } from "./_home/TraineeDashboardModal";
-import { UnderDevelopmentNotice } from "./_home/UnderDevelopmentNotice";
+import { UnderDevelopmentNotice, UnderDevelopmentLabel } from "./_home/UnderDevelopmentNotice";
 import { ScheduleDayList } from "@/components/ScheduleDayList";
 import type { GridRow } from "@/lib/tasks";
 import { toBusinessDateKey } from "@/lib/business-day";
@@ -429,8 +430,8 @@ export default function Home() {
             onRefresh={refreshCore}
           />
           */}
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
-          <section className="order-2 rounded-xl bg-card p-4 shadow-sm lg:order-1 lg:min-w-0 lg:flex-1">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-stretch">
+          <section className="order-2 flex flex-col rounded-xl bg-card p-4 shadow-sm lg:order-1 lg:min-w-0 lg:flex-1">
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
               <h2 className="text-lg font-semibold">Tasks Overview</h2>
             </div>
@@ -438,9 +439,23 @@ export default function Home() {
               activeProfile={activeProfile}
               rows={taskRows}
               onRowsChange={setTaskRows}
+              fillHeight
             />
           </section>
-          <section className="order-1 rounded-xl bg-card p-4 shadow-sm lg:order-2 lg:min-w-0 lg:flex-1">
+          <div className="order-1 flex flex-col gap-4 lg:order-2 lg:min-w-0 lg:flex-1">
+          <section className="rounded-xl bg-card p-4 shadow-sm">
+            <div className="mb-3 flex flex-wrap items-center gap-x-1.5 gap-y-1">
+              <h2 className="text-lg font-semibold">Break reminders</h2>
+              <UnderDevelopmentLabel />
+            </div>
+            <ScheduleBreakRemindersOverview
+              activeProfile={activeProfile}
+              canToggleBreaks={user.role !== "VIEWER"}
+              dateKey={scheduleDateKey}
+              schedule={scheduleDay}
+            />
+          </section>
+          <section className="rounded-xl bg-card p-4 shadow-sm">
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
               <h2 className="text-lg font-semibold">Trainee progress</h2>
               {canOpenTraineeManagement && (
@@ -503,6 +518,7 @@ export default function Home() {
               })}
             </div>
           </section>
+          </div>
           </div>
         </>
       )}

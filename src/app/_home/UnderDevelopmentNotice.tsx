@@ -1,3 +1,15 @@
+import { WarningTriangleIcon } from "./icons";
+
+/** Inline amber warning icon + label for section headers. */
+export function UnderDevelopmentLabel() {
+  return (
+    <>
+      <WarningTriangleIcon className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
+      <span className="text-sm font-medium text-amber-600 dark:text-amber-400">Under development</span>
+    </>
+  );
+}
+
 /** Centered amber "under development" callout, reused by the Tasks and Schedule tabs. */
 export function UnderDevelopmentNotice() {
   return (
