@@ -15,6 +15,23 @@ This app is a **live website** with real production data. Treat every database a
 
 Local development may use fresh databases; production must always remain intact.
 
+## Supabase RLS (public schema)
+
+The hosted database is on **Supabase**. Every table in the `public` schema must have **Row Level Security enabled** — Supabase flags any table without it.
+
+**When adding a new Prisma table**, append this to the same migration’s `migration.sql` (after `CREATE TABLE` and indexes):
+
+```sql
+-- RLS lockdown: no anon/authenticated policies. Prisma via DATABASE_URL bypasses RLS.
+ALTER TABLE "YourNewTable" ENABLE ROW LEVEL SECURITY;
+```
+
+Examples: `prisma/migrations/20260531150000_add_task_cells/migration.sql`, `prisma/migrations/20260630120000_enable_rls_missing_public_tables/migration.sql`.
+
+- **Do not add** `anon` / `authenticated` RLS policies — the app uses **Prisma** over `DATABASE_URL` (table owner), not the Supabase Data API. RLS with no policies blocks PostgREST while Prisma keeps working.
+- **Do not** use `FORCE ROW LEVEL SECURITY` — that would block the Prisma connection too.
+- If `prisma migrate deploy` hangs on Supabase’s pooler, apply RLS on production with: `npx tsx prisma/scripts/apply-rls-lockdown.ts` (idempotent; targets only tables missing RLS).
+
 ## Version number before commit & push
 
 The on-screen version is shown in the site footer (`SiteFooter` → `APP_VERSION`). It is built at compile time from `package.json`’s `version` field plus build metadata in `next.config.ts` (e.g. `2.1.0+847` locally, or `2.1.0+abc1234` on Vercel).
